@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Warung Ucox | Belanja Sembako Mudah dan Hemat</title>
+  <meta name="theme-color" content="#1B9CDC">
+  <meta name="description" content="Warung Ucox - Belanja beras, minyak, telur, gas. Cek stok & harga terbaru, pesan langsung via WhatsApp.">
+  
+    
+  <script src="assets/tailwind.min.js"></script>
+  <script src="assets/tailwindconfig.js"></script>  
+  <link href="assets/nunitofont.css" rel="stylesheet">
+  <script src="assets/lucide.min.js"></script>
+  <link href="assets/style.css" rel="stylesheet">
+  
+</head>
+
+<body class="bg-[#DCE3EA] text-stone-800 font-sans antialiased">
+
+  <!-- Cangkang selebar layar HP, di tengah layar saat dibuka di komputer -->
+  <div id="app-shell" class="relative mx-auto min-h-screen w-full max-w-[480px] bg-latar shadow-[0_0_40px_rgba(16,24,40,.18)]">
+
+  <header id="app-header" class="sticky top-0 z-20 bg-white shadow-[0_1px_3px_rgba(16,24,40,.08)]"></header>
+
+  <!-- Pemberitahuan sinkron Google Sheets (muncul hanya saat ada masalah) -->
+  <div id="sync-banner" class="hidden" role="status"></div>
+
+  <!-- Hero + pencarian -->
+  <section class="hero text-white">
+    <div class="mx-auto max-w-[480px] px-4 pb-14 pt-7">
+      <h2 class="max-w-full font-display text-2xl font-black leading-tight">Belanja sembako, mudah dan hemat</h2>
+      <p class="mt-2 max-w-full text-sm text-white/90">Cari produk, cek harga dan stok terbaru, lalu pesan lewat WhatsApp.</p>
+
+      <div class="relative mt-5 max-w-full">
+        <label for="search" class="sr-only">Cari produk</label>
+        <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-stone-400">
+          <i data-lucide="search" class="w-5 h-5"></i>
+        </span>
+        <input id="search" type="search" autocomplete="off" placeholder="Cari beras, minyak, atau barcode"
+               class="h-12 w-full rounded-full border-0 bg-white pl-12 pr-12 text-base text-stone-800 shadow-lg placeholder:text-stone-400">
+        <button id="clear" type="button" aria-label="Hapus pencarian"
+                class="hidden absolute right-2 top-1/2 -translate-y-1/2 grid place-items-center w-8 h-8 rounded-full text-stone-500">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <ul class="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold text-white/95">
+        <li class="flex items-center gap-1.5"><i data-lucide="tag" class="h-4 w-4"></i>Harga jelas</li>
+        <li class="flex items-center gap-1.5"><i data-lucide="package-check" class="h-4 w-4"></i>Stok terkini</li>
+        <li class="flex items-center gap-1.5"><i data-lucide="message-circle" class="h-4 w-4"></i>Pesan via WhatsApp</li>
+      </ul>
+    </div>
+  </section>
+
+  <main class="mx-auto max-w-[480px] px-4 pb-14">
+
+    <!-- Kategori: kartu putih yang menumpuk di tepi bawah hero -->
+    <div class="-mt-8 rounded-2xl bg-white p-2 shadow-[0_4px_16px_rgba(16,24,40,.10)]">
+      <div id="chips" class="no-scrollbar flex select-none gap-1 overflow-x-auto" role="group" aria-label="Filter kategori"></div>
+    </div>
+
+    <!-- Grid produk -->
+    <div class="mt-7 flex flex-wrap items-baseline justify-between gap-x-3">
+      <h2 class="font-display text-xl font-extrabold text-stone-800">Produk</h2>
+      <p id="count" class="text-sm font-semibold text-stone-500" aria-live="polite"></p>
+    </div>
+    <section aria-label="Daftar produk" class="mt-3">
+      <div id="product-grid" class="grid grid-cols-2 gap-3"></div>
+    </section>
+
+  </main>
+
+  <!-- Footer (isi dibuat oleh app.js dari CONFIG) -->
+  <footer id="app-footer" class="bg-malam text-white/75"></footer>
+
+  </div><!-- /app-shell -->
+
+  <!-- Bar keranjang (muncul saat ada isi) -->
+  <div id="cart-bar" class="fixed inset-x-0 bottom-0 z-30 hidden px-4 pt-2"
+       style="padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem)"></div>
+
+  <!-- Modal: keranjang dan kelola stok/harga -->
+  <dialog id="modal" aria-label="Jendela"
+          class="m-0 mt-auto w-full max-w-lg overflow-hidden rounded-t-3xl bg-white p-0 text-stone-800 shadow-xl backdrop:bg-black/40 sm:m-auto sm:rounded-3xl">
+    <div id="modal-isi" class="flex max-h-[88vh] flex-col"></div>
+  </dialog>
+
+  <!-- Data bawaan (cadangan/contoh). Data asli diambil dari Google Sheets bila CONFIG.sheetsUrl di app.js diisi. -->
+  <script src="data/categories.js"></script>
+  <script src="data/products.js"></script>
+  <script src="data/suppliers.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+/* Hero biru: gradasi langit dengan lingkaran dekoratif halus */
+    .hero {
+      background:
+        radial-gradient(circle at 88% 18%, rgba(255,255,255,.16) 0 120px, transparent 121px),
+        radial-gradient(circle at 6% 112%, rgba(255,255,255,.12) 0 150px, transparent 151px),
+        linear-gradient(135deg, #1B9CDC 0%, #0F78B0 100%);
+    }
+    .no-scrollbar { scrollbar-width: none; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    #chips { cursor: grab; }
+    #chips.menggeser, #chips.menggeser button { cursor: grabbing; }
+    :focus-visible { outline: 3px solid #0F78B0; outline-offset: 2px; }

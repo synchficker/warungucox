@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Panel Staf | Warung Ucox</title>
+  <meta name="theme-color" content="#1B9CDC">
+  <meta name="robots" content="noindex, nofollow">
+
+  <script src="assets/tailwind.min.js"></script>
+  <script src="assets/tailwindconfig.js"></script>
+  <link href="assets/nunitofont.css" rel="stylesheet">
+  <script src="assets/lucide.min.js"></script>
+  <link href="assets/style.css" rel="stylesheet">
+  <style>
+    /* Cetak label barcode: sembunyikan seluruh panel, tampilkan hanya label di dalam jendela */
+    @media print {
+      @page { margin: 8mm; }
+      html, body { background: #fff !important; }
+      #app-shell, #p-nav, #toast, .tanpa-cetak { display: none !important; }
+      dialog#modal { position: static !important; display: block !important; margin: 0 !important; width: auto !important; max-width: none !important; overflow: visible !important; box-shadow: none !important; }
+      dialog#modal::backdrop { display: none !important; }
+      #modal-isi, #modal-isi > div { max-height: none !important; overflow: visible !important; }
+    }
+  </style>
+</head>
+
+<body class="bg-[#DCE3EA] text-stone-800 font-sans antialiased">
+
+  <!-- Cangkang yang sama dengan halaman toko: selebar HP, melebar di layar besar -->
+  <div id="app-shell" class="relative mx-auto min-h-screen w-full max-w-[480px] bg-latar shadow-[0_0_40px_rgba(16,24,40,.18)] md:max-w-3xl">
+    <header id="p-header" class="sticky top-0 z-20 bg-white shadow-[0_1px_3px_rgba(16,24,40,.08)]"></header>
+    <main id="p-main" class="pb-28"></main>
+  </div>
+
+  <nav id="p-nav" class="fixed inset-x-0 bottom-0 z-30 hidden"
+       style="padding-bottom: env(safe-area-inset-bottom, 0px)"></nav>
+
+  <div id="toast" class="pointer-events-none fixed inset-x-0 z-50 hidden px-4"
+       style="bottom: calc(env(safe-area-inset-bottom, 0px) + 5.5rem)" role="status" aria-live="polite"></div>
+
+  <dialog id="modal" aria-label="Jendela"
+          class="m-0 mt-auto w-full max-w-lg overflow-hidden rounded-t-3xl bg-white p-0 text-stone-800 shadow-xl backdrop:bg-black/40 sm:m-auto sm:rounded-3xl">
+    <div id="modal-isi" class="flex max-h-[88vh] flex-col"></div>
+  </dialog>
+
+  <!-- Urutan penting: config > inti > modul. Modul berikutnya (inventaris, POS, dst.) cukup ditambah di sini. -->
+  <script src="config.js"></script>
+  <script src="panel/core.js"></script>
+  <script src="panel/auth.js"></script>
+  <script src="panel/dashboard.js"></script>
+  <script src="panel/master.js"></script>
+  <script src="panel/barcode.js"></script>
+  <script src="panel/produk.js"></script>
+  <script src="panel/kategori.js"></script>
+  <script src="panel/supplier.js"></script>
+  <script src="panel/stok.js"></script>
+  <script src="panel/users.js"></script>
+  <script src="panel/settings.js"></script>
+  <script src="panel/audit.js"></script>
+  <script src="panel/account.js"></script>
+  <script src="panel/main.js"></script>
+</body>
+</html>
