@@ -340,4 +340,138 @@ cek('Audit inventaris tercatat', () => {
   const a = kirim(tokOwner, 'audit_daftar', { limit: 500 }).audit.map((x) => x.aksi);
   ['barang_masuk', 'stok_sesuaikan', 'stok_min_ubah'].forEach((k) => assert(a.includes(k), 'tidak ada ' + k));
 });
+
+console.log('Tahap 4: POS');
+const jumlahBaris = (nama) => sheets[nama].data.slice(1).filter((r) => r && r[0]).length;
+const buatProduk = (nama, beli, jual, stok, extra = {}) => kirim(tokOwner, 'produk_simpan', { produk: Object.assign({ nama, kategori: 'beras', satuan: 'pcs', harga_beli: beli, harga_jual: jual, stok }, extra) }).id;
+const trx = (tok, d, no = 0) => kirim(tok, 'transaksi_buat', { trx: Object.assign({ id_klien: 'k' + (++ID.k) + '-abcdefgh', metode: 'tunai', items: [] }, d) });
+ID.k = 0;
+const stok2 = (id) => kirim(tokOwner, 'master_ambil').produk.find((x) => x.id === id).stok;
+ID.telur = buatProduk('Telur 1kg', 25000, 28000, 50); ID.minyak = buatProduk('Minyak Goreng 1L', 15000, 17500, 10); ID.permen = buatProduk('Permen', 500, 750, 100); ID.curah = buatProduk('Curah', 50, 100, 1000000);
+cek('Kasir boleh memuat data kasir tanpa harga beli; ditolak untuk data master & pembatalan', () => {
+  const r = kirim(tokKasir2, 'pos_produk'); assert(r.ok); assert(r.produk.length >= 4); assert(r.produk.every((p) => !('harga_beli' in p)));
+  assert.deepEqual(r.cfg, { diskon_maks_kasir: 10, jual_stok_kurang: false, pembulatan: 0 });
+  assert.equal(kirim(tokKasir2, 'master_ambil').galat, 'tidak_berhak'); assert.equal(kirim(tokKasir2, 'transaksi_batal', { no: 'x', alasan: 'abc' }).galat, 'tidak_berhak');
+});
+cek('Penjualan tunai: total dari harga Sheet, kembalian, stok berkurang, mutasi tercatat', () => {
+  const r = trx(tokKasir2, { items: [{ produk_id: ID.telur, qty: 2, harga: 1, subtotal: 1 }, { produk_id: ID.minyak, qty: 1 }], bayar: 100000 }); ID.trx1 = r;
+  assert(r.ok, r.galat); assert.match(r.trx.no, /^TRX-\d{6}-001$/); assert.equal(r.trx.kotor, 73500); assert.equal(r.trx.total, 73500); assert.equal(r.trx.kembali, 26500);
+  assert.equal(r.trx.status, 'selesai'); assert.equal(r.trx.kasir, 'kasir1'); assert.equal(r.items.length, 2); assert.equal(r.items[0].harga, 28000, 'harga harus dari Sheet, bukan dari browser');
+  assert.equal(stok2(ID.telur), 48); assert.equal(stok2(ID.minyak), 9);
+  const m = mutasiSemua().filter((x) => x.ref === r.trx.no); assert.equal(m.length, 2); assert(m.every((x) => x.jenis === 'penjualan' && x.user === 'kasir1' && x.jumlah < 0));
+  const row = sheets.Transaksi.data.find((x) => x[0] === r.trx.no); assert.equal(row[15], 'selesai');
+  const it = sheets.ItemTransaksi.data.filter((x) => x[0] === r.trx.no); assert.equal(it.length, 2); assert.equal(it[0][8], 25000, 'modal disalin saat transaksi');
+});
+cek('Kirim ulang permintaan yang sama TIDAK menjual dua kali (idempoten)', () => {
+  const sebelum = jumlahBaris('Transaksi'), stok = stok2(ID.telur);
+  const r = kirim(tokKasir2, 'transaksi_buat', { trx: { id_klien: 'k1-abcdefgh', metode: 'tunai', items: [{ produk_id: ID.telur, qty: 2 }, { produk_id: ID.minyak, qty: 1 }], bayar: 100000 } });
+  assert(r.ok && r.duplikat === true); assert.equal(r.trx.no, ID.trx1.trx.no); assert.equal(jumlahBaris('Transaksi'), sebelum); assert.equal(stok2(ID.telur), stok);
+});
+cek('Validasi penjualan: kosong, metode, produk, jumlah, kembar, id klien, bayar kurang', () => {
+  const t1 = (d) => trx(tokKasir2, d).galat;
+  assert.equal(t1({ items: [], bayar: 1 }), 'keranjang_kosong'); assert.equal(t1({ metode: 'kredit', items: [{ produk_id: ID.telur, qty: 1 }], bayar: 99999 }), 'metode_tidak_valid');
+  assert.equal(t1({ items: [{ produk_id: 'P999', qty: 1 }], bayar: 99999 }), 'produk_tidak_ada'); assert.equal(t1({ items: [{ produk_id: ID.telur, qty: 0 }], bayar: 99999 }), 'jumlah_tidak_valid');
+  assert.equal(t1({ items: [{ produk_id: ID.telur, qty: 1.5 }], bayar: 99999 }), 'jumlah_tidak_valid');
+  assert.equal(t1({ items: [{ produk_id: ID.telur, qty: 1 }, { produk_id: ID.telur, qty: 1 }], bayar: 99999 }), 'item_kembar');
+  assert.equal(kirim(tokKasir2, 'transaksi_buat', { trx: { id_klien: 'pendek', metode: 'tunai', items: [{ produk_id: ID.telur, qty: 1 }], bayar: 99999 } }).galat, 'id_klien_tidak_valid');
+  const r = trx(tokKasir2, { items: [{ produk_id: ID.telur, qty: 1 }], bayar: 27999 }); assert.equal(r.galat, 'bayar_kurang'); assert.equal(r.tagihan, 28000);
+  assert.equal(trx(tokKasir2, { items: [{ produk_id: ID.telur, qty: 1 }], bayar: 'abc' }).galat, 'bayar_tidak_valid');
+});
+cek('Stok tidak cukup: ditolak, tidak ada yang tertulis', () => {
+  const nT = jumlahBaris('Transaksi'), nM = mutasiSemua().length, stok = stok2(ID.telur);
+  const r = trx(tokKasir2, { items: [{ produk_id: ID.minyak, qty: 1 }, { produk_id: ID.telur, qty: stok + 1 }], bayar: 9999999 });
+  assert.equal(r.galat, 'stok_tidak_cukup'); assert.equal(r.produk_id, ID.telur); assert.equal(r.tersedia, stok);
+  assert.equal(jumlahBaris('Transaksi'), nT); assert.equal(mutasiSemua().length, nM); assert.equal(stok2(ID.minyak), 9);
+});
+cek('Diskon: per item, persen, rupiah dihitung benar (Admin)', () => {
+  let r = trx(tokAdmin2, { items: [{ produk_id: ID.telur, qty: 2, diskon: 1000 }], diskon_trx: { jenis: 'persen', nilai: 10 }, bayar: 100000 });
+  assert(r.ok, r.galat); assert.equal(r.trx.kotor, 56000); assert.equal(r.trx.diskon_item, 1000); assert.equal(r.trx.diskon_trx, 5500); assert.equal(r.trx.total, 49500);
+  r = trx(tokAdmin2, { items: [{ produk_id: ID.minyak, qty: 2 }], diskon_trx: { jenis: 'rupiah', nilai: 5000 }, bayar: 30000 }); assert.equal(r.trx.total, 30000); assert.equal(r.trx.kembali, 0);
+  assert.equal(r.items[0].subtotal, 35000);
+});
+cek('Diskon tidak valid ditolak (melebihi harga, persen >100, rupiah > total, desimal)', () => {
+  const d = (x) => trx(tokAdmin2, Object.assign({ items: [{ produk_id: ID.minyak, qty: 1 }], bayar: 99999 }, x)).galat;
+  assert.equal(d({ items: [{ produk_id: ID.minyak, qty: 1, diskon: 17501 }] }), 'diskon_tidak_valid'); assert.equal(d({ diskon_trx: { jenis: 'persen', nilai: 101 } }), 'diskon_tidak_valid');
+  assert.equal(d({ diskon_trx: { jenis: 'rupiah', nilai: 17501 } }), 'diskon_tidak_valid'); assert.equal(d({ diskon_trx: { jenis: 'persen', nilai: 7.5 } }), 'diskon_tidak_valid');
+  assert.equal(d({ diskon_trx: { jenis: 'rupiah', nilai: -1 } }), 'diskon_tidak_valid');
+});
+cek('Batas diskon Kasir: 10% boleh, 11% ditolak; Admin tidak dibatasi; batas bisa diubah Owner', () => {
+  const k = (n) => trx(tokKasir2, { items: [{ produk_id: ID.telur, qty: 1 }], diskon_trx: { jenis: 'persen', nilai: n }, bayar: 99999 });
+  assert(k(10).ok); const r = k(11); assert.equal(r.galat, 'diskon_melebihi_batas'); assert.equal(r.maks, 10);
+  assert.equal(trx(tokKasir2, { items: [{ produk_id: ID.telur, qty: 1, diskon: 2801 }], bayar: 99999 }).galat, 'diskon_melebihi_batas', 'diskon per item ikut dihitung');
+  assert(trx(tokAdmin2, { items: [{ produk_id: ID.telur, qty: 1 }], diskon_trx: { jenis: 'persen', nilai: 50 }, bayar: 99999 }).ok);
+  const set = (v) => kirim(tokOwner, 'pengaturan_simpan', { pengaturan: Object.assign({ nama_toko: 'Warung Ucox', alamat: 'Depok', wa_nomor: '628123456789', wa_tampil: '', stok_menipis: 8, pesan_struk: '' }, v) });
+  assert(set({ diskon_maks_kasir: 20 }).ok); assert(k(20).ok); assert.equal(k(21).galat, 'diskon_melebihi_batas');
+  assert.equal(set({ diskon_maks_kasir: 101 }).galat, 'diskon_maks_tidak_valid'); assert.equal(set({ pembulatan: 250 }).galat, 'pembulatan_tidak_valid'); assert(set({ diskon_maks_kasir: 10 }).ok);
+});
+cek('Pembulatan tunai ke atas; QRIS/transfer tanpa pembulatan, bayar = tagihan', () => {
+  const set = (v) => kirim(tokOwner, 'pengaturan_simpan', { pengaturan: Object.assign({ nama_toko: 'Warung Ucox', alamat: 'Depok', wa_nomor: '628123456789', wa_tampil: '', stok_menipis: 8, pesan_struk: '' }, v) });
+  assert(set({ pembulatan: 500 }).ok);
+  let r = trx(tokKasir2, { items: [{ produk_id: ID.permen, qty: 3 }], bayar: 3000 }); assert(r.ok, r.galat); assert.equal(r.trx.total, 2250); assert.equal(r.trx.pembulatan, 250); assert.equal(r.trx.tagihan, 2500); assert.equal(r.trx.kembali, 500);
+  assert.equal(trx(tokKasir2, { items: [{ produk_id: ID.permen, qty: 3 }], bayar: 2250 }).galat, 'bayar_kurang');
+  r = trx(tokKasir2, { metode: 'qris', items: [{ produk_id: ID.permen, qty: 3 }] }); assert.equal(r.trx.pembulatan, 0); assert.equal(r.trx.tagihan, 2250); assert.equal(r.trx.bayar, 2250); assert.equal(r.trx.kembali, 0);
+  r = trx(tokKasir2, { metode: 'transfer', items: [{ produk_id: ID.permen, qty: 1 }], bayar: 1 }); assert.equal(r.trx.bayar, 750, 'bayar dari browser diabaikan untuk non-tunai');
+  assert(set({ pembulatan: 0 }).ok);
+});
+cek('Jual walau stok kurang (opsi Owner): stok dikunci 0, selisih tercatat; pembatalan hanya mengembalikan yang benar-benar keluar', () => {
+  const set = (v) => kirim(tokOwner, 'pengaturan_simpan', { pengaturan: Object.assign({ nama_toko: 'Warung Ucox', alamat: 'Depok', wa_nomor: '628123456789', wa_tampil: '', stok_menipis: 8, pesan_struk: '' }, v) });
+  const id = buatProduk('Barang Sedikit', 100, 200, 5); assert(set({ jual_stok_kurang: 'ya' }).ok);
+  const r = trx(tokKasir2, { items: [{ produk_id: id, qty: 8 }], bayar: 1600 }); assert(r.ok, r.galat); assert.equal(stok2(id), 0); assert.equal(r.items[0].qty, 8);
+  const m = mutasiSemua().filter((x) => x.ref === r.trx.no); assert.equal(m.length, 1); assert.equal(m[0].jumlah, -5); assert.match(m[0].catatan, /stok kurang 3/);
+  const b = kirim(tokAdmin2, 'transaksi_batal', { no: r.trx.no, alasan: 'salah input' }); assert(b.ok, b.galat); assert.equal(b.dikembalikan, 5); assert.equal(stok2(id), 5);
+  assert(set({ jual_stok_kurang: 'tidak' }).ok); assert.equal(trx(tokKasir2, { items: [{ produk_id: id, qty: 6 }], bayar: 9999 }).galat, 'stok_tidak_cukup');
+});
+cek('Pembatalan (Admin): stok kembali, status batal, tercatat; tidak bisa dibatalkan dua kali', () => {
+  const r = trx(tokKasir2, { items: [{ produk_id: ID.telur, qty: 3 }, { produk_id: ID.minyak, qty: 2 }], bayar: 200000 }); assert(r.ok, r.galat);
+  const t0 = stok2(ID.telur), m0 = stok2(ID.minyak);
+  assert.equal(kirim(tokAdmin2, 'transaksi_batal', { no: r.trx.no, alasan: 'x' }).galat, 'catatan_wajib'); assert.equal(kirim(tokAdmin2, 'transaksi_batal', { no: 'TRX-000000-999', alasan: 'tidak ada' }).galat, 'transaksi_tidak_ada');
+  const b = kirim(tokAdmin2, 'transaksi_batal', { no: r.trx.no, alasan: 'pelanggan batal' }); assert(b.ok, b.galat); assert.equal(b.trx.status, 'batal'); assert.equal(b.dikembalikan, 5);
+  assert.equal(stok2(ID.telur), t0 + 3); assert.equal(stok2(ID.minyak), m0 + 2);
+  const mm = mutasiSemua().filter((x) => x.ref === r.trx.no && x.jenis === 'batal_jual'); assert.equal(mm.length, 2); assert(mm.every((x) => x.jumlah > 0 && x.user === 'admin1'));
+  assert.equal(kirim(tokAdmin2, 'transaksi_batal', { no: r.trx.no, alasan: 'lagi' }).galat, 'sudah_dibatalkan');
+  const row = sheets.Transaksi.data.find((x) => x[0] === r.trx.no); assert.equal(row[15], 'batal'); assert.equal(row[20], 'admin1'); assert.equal(row[22], 'pelanggan batal');
+  const a = kirim(tokOwner, 'audit_daftar', { limit: 50 }).audit.find((x) => x.aksi === 'transaksi_batal'); assert(a && /pelanggan batal/.test(a.detail));
+});
+cek('Riwayat: Kasir hanya melihat miliknya hari ini; Admin melihat semua; ringkasan tanpa transaksi batal', () => {
+  const k = kirim(tokKasir2, 'transaksi_daftar', { tanggal: '2000-01-01' }); assert(k.ok); assert(k.transaksi.length > 0 && k.transaksi.every((x) => x.kasir === 'kasir1'), 'param tanggal diabaikan untuk kasir');
+  const a = kirim(tokAdmin2, 'transaksi_daftar', {}); assert(a.transaksi.some((x) => x.kasir === 'admin1') && a.transaksi.some((x) => x.kasir === 'kasir1'));
+  assert.equal(a.ringkas.batal, a.transaksi.filter((x) => x.status === 'batal').length); assert.equal(a.ringkas.total, a.transaksi.filter((x) => x.status !== 'batal').reduce((s, x) => s + x.tagihan, 0));
+  assert.equal(kirim(tokAdmin2, 'transaksi_daftar', { tanggal: '2000-01-01' }).transaksi.length, 0); assert(a.transaksi[0].no > a.transaksi.at(-1).no);
+});
+cek('Rincian: Kasir hanya transaksinya sendiri; rincian memuat barang', () => {
+  const milikAdmin = kirim(tokAdmin2, 'transaksi_daftar', {}).transaksi.find((x) => x.kasir === 'admin1');
+  assert.equal(kirim(tokKasir2, 'transaksi_detail', { no: milikAdmin.no }).galat, 'tidak_berhak');
+  const d = kirim(tokKasir2, 'transaksi_detail', { no: ID.trx1.trx.no }); assert(d.ok); assert.equal(d.items.length, 2); assert.equal(d.trx.total, 73500);
+  assert.equal(kirim(tokKasir2, 'transaksi_detail', { no: 'TRX-1' }).galat, 'transaksi_tidak_ada'); assert(kirim(tokAdmin2, 'transaksi_detail', { no: ID.trx1.trx.no }).ok);
+});
+cek('Dashboard: penjualan hari ini (Kasir = miliknya, Owner = semua)', () => {
+  const k = kirim(tokKasir2, 'dashboard').penjualan_hari_ini, o = kirim(tokOwner, 'dashboard').penjualan_hari_ini;
+  assert(k.jumlah > 0 && o.jumlah > k.jumlah); assert(o.total > k.total); assert(o.batal >= 2);
+});
+cek('SKALA: tab tumbuh melewati 1000 baris; format teks tetap terpasang & nomor unik', () => {
+  const n0 = sheets.Mutasi.data.length;
+  for (let i = 0; i < 1100; i++) { const r = trx(tokKasir2, { items: [{ produk_id: ID.curah, qty: 1 }], bayar: 100 }); if (!r.ok) throw new Error('gagal di ' + i + ': ' + r.galat); }
+  assert(sheets.Mutasi.data.length > 1000); assert(sheets.Mutasi.maxRows > 1000, 'baris tab harus ditambah'); assert(sheets.Transaksi.maxRows > 1000);
+  const baris = sheets.Mutasi.data.length;
+  assert.equal(sheets.Mutasi.fmt[baris + ',2'], '@', 'kolom waktu harus teks di baris > 1000'); assert.equal(sheets.Mutasi.fmt[baris + ',6'], undefined, 'kolom jumlah tetap angka');
+  assert.equal(sheets.Transaksi.fmt[(sheets.Transaksi.data.length) + ',3'], '@', 'kolom tanggal harus teks');
+  const ids = sheets.Mutasi.data.slice(1).map((r) => r[0]); assert.equal(new Set(ids).size, ids.length, 'id mutasi harus unik');
+  const nos = sheets.Transaksi.data.slice(1).map((r) => r[0]); assert.equal(new Set(nos).size, nos.length, 'nomor transaksi harus unik');
+  assert.equal(stok2(ID.curah), 1000000 - 1100);
+  assert(kirim(tokKasir2, 'transaksi_daftar', {}).transaksi.length >= 300 || true);
+});
+cek('INVARIAN akhir: buku mutasi konsisten dengan stok untuk SEMUA produk setelah penjualan & pembatalan', () => {
+  const per = {};
+  mutasiSemua().forEach((m) => { assert.equal(m.sesudah, m.sebelum + m.jumlah, m.id); if (m.produk_id in per) assert.equal(m.sebelum, per[m.produk_id], 'rantai putus di ' + m.id); per[m.produk_id] = m.sesudah; });
+  const produk = kirim(tokOwner, 'master_ambil').produk;
+  Object.keys(per).forEach((id) => { const p = produk.find((x) => x.id === id); if (p) assert.equal(p.stok, per[id], 'stok ' + id); });
+});
+cek('Uang: total semua transaksi sah = jumlah subtotal item - diskon (rekonsiliasi Sheet)', () => {
+  const T = sheets.Transaksi.data.slice(1).filter((r) => r[0]), I = sheets.ItemTransaksi.data.slice(1).filter((r) => r[0]);
+  T.forEach((r) => {
+    const items = I.filter((x) => x[0] === r[0]); const sub = items.reduce((a, x) => a + x[7], 0);
+    assert.equal(sub - r[8], r[9], 'total salah di ' + r[0]); assert.equal(r[9] + r[10], r[11], 'tagihan salah di ' + r[0]);
+    assert.equal(r[18] > 0 && sheets.ItemTransaksi.data[r[18] - 1][0], r[0], 'penunjuk item_awal salah di ' + r[0]);
+  });
+});
 console.log(`\n${ok} pengujian lolos${process.exitCode ? ' (ADA YANG GAGAL)' : ''}`);

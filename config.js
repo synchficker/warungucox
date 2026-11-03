@@ -6,6 +6,7 @@ const CONFIG = {
   waTampil: '0898-9921-788',
   lamaBukaMenit: 10,   // PIN berlaku sekian menit sejak aksi terakhir
   alamat: 'Jl. Curug Raya Gg. Rukun 2 No. 6, Curug, Bojongsari, Kota Depok',
+  menuLamaAktif: false,   // false = menu Kelola, Riwayat, dan Kasir lama di halaman toko disembunyikan (diganti Panel Staf > Kasir). true = tampilkan lagi.
   pakaiGambar: false,   // ubah ke true setelah foto produk ada di folder img/
   stokMenipis: 10,      // stok sama atau di bawah angka ini diberi label menipis
   // Alamat Web App Google Apps Script (berakhiran /exec). Kosong = mode lokal (data hanya di perangkat ini).

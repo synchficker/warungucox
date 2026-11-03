@@ -4,9 +4,9 @@ const MODUL = [
   { no: 1, nama: 'Autentikasi & Peran', info: 'Login, sesi, hak akses, akun staf', status: 'aktif' },
   { no: 2, nama: 'Master Data', info: 'Kategori, produk, supplier, gambar, barcode', status: 'aktif' },
   { no: 3, nama: 'Inventaris', info: 'Stok masuk/keluar, stok minimum, mutasi', status: 'aktif' },
-  { no: 4, nama: 'Point of Sale', info: 'Keranjang, scanner, diskon, pembayaran, struk', status: 'next' },
-  { no: 5, nama: 'Keuangan', info: 'Pengeluaran, pemasukan, laba', status: 'rencana' },
-  { no: 6, nama: 'Analitik', info: 'Omzet, terlaris, nilai persediaan', status: 'rencana' },
+  { no: 4, nama: 'Point of Sale', info: 'Keranjang, scanner, diskon, pembayaran, struk', status: 'aktif' },
+  { no: 5, nama: 'Keuangan', info: 'Pengeluaran, pemasukan, laba, tutup kas', status: 'aktif' },
+  { no: 6, nama: 'Analitik', info: 'Omzet, terlaris, nilai persediaan', status: 'next' },
   { no: 7, nama: 'Audit & Keamanan', info: 'Log lengkap, penguncian, backup', status: 'rencana' }
 ];
 const STATUS_MODUL = {
@@ -48,6 +48,11 @@ VIEW.dashboard = {
       </div>
     </section>
     <div class="mx-auto -mt-8 max-w-[480px] space-y-4 px-4 md:max-w-3xl">
+      <div class="grid grid-cols-2 gap-3">
+        ${kotakStat(p.peran === 'kasir' ? 'Transaksi saya hari ini' : 'Transaksi hari ini', d.penjualan_hari_ini.jumlah, 'receipt')}
+        ${kotakStat(p.peran === 'kasir' ? 'Penjualan saya' : 'Penjualan hari ini', rp(d.penjualan_hari_ini.total), 'banknote', 'bg-white', true)}
+      </div>
+      ${S.izin.includes('pos') ? `<button type="button" data-aksi="pindah" data-ke="pos" class="flex w-full items-center justify-center gap-2 rounded-full bg-biru py-3 font-extrabold text-white">${ic('shopping-cart', 'w-5 h-5')} Buka kasir</button>` : ''}
       <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
         ${kotakStat('Produk', d.jumlah_produk, 'package')}
         ${kotakStat('Stok menipis', d.jumlah_menipis, 'triangle-alert', d.jumlah_menipis ? 'bg-[#FDF1DC]' : 'bg-white')}

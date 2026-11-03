@@ -11,7 +11,10 @@ const LABEL_AUDIT = {
   kategori_tambah: ['Kategori ditambah', 'layout-grid', 'text-biru'], kategori_ubah: ['Kategori diubah', 'layout-grid', 'text-biru'], kategori_hapus: ['Kategori dihapus', 'layout-grid', 'text-tomat'],
   supplier_tambah: ['Supplier ditambah', 'truck', 'text-biru'], supplier_ubah: ['Supplier diubah', 'truck', 'text-biru'], supplier_hapus: ['Supplier dihapus', 'truck', 'text-tomat'],
   gambar_unggah: ['Foto produk diunggah', 'image-plus', 'text-biru'],
-  barang_masuk: ['Barang masuk', 'package-plus', 'text-biru'], stok_sesuaikan: ['Penyesuaian stok', 'clipboard-check', 'text-amber-600'], stok_min_ubah: ['Stok minimum diubah', 'triangle-alert', 'text-biru']
+  barang_masuk: ['Barang masuk', 'package-plus', 'text-biru'], stok_sesuaikan: ['Penyesuaian stok', 'clipboard-check', 'text-amber-600'], stok_min_ubah: ['Stok minimum diubah', 'triangle-alert', 'text-biru'],
+  transaksi_batal: ['Transaksi dibatalkan', 'undo-2', 'text-tomat'],
+  keuangan_catat: ['Catatan kas', 'notebook-pen', 'text-biru'], keuangan_ubah: ['Catatan kas diubah', 'notebook-pen', 'text-amber-600'], keuangan_batal: ['Catatan kas dibatalkan', 'undo-2', 'text-tomat'],
+  kas_tutup: ['Tutup kas', 'vault', 'text-biru'], kas_tutup_ulang: ['Tutup kas ulang', 'vault', 'text-amber-600']
 };
 let dataAudit = []; let cariAudit = '';
 

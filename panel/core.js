@@ -95,12 +95,33 @@ const PESAN = {
   catatan_wajib: 'Catatan wajib diisi (minimal 3 huruf) untuk jenis ini.',
   tidak_ada_perubahan: 'Hasil hitung sama dengan stok saat ini. Tidak ada yang diubah.',
   stok_min_tidak_valid: 'Stok minimum harus angka 0 sampai 100.000, atau kosongkan untuk memakai batas toko.',
+  keranjang_kosong: 'Keranjang masih kosong.',
+  metode_tidak_valid: 'Metode pembayaran tidak valid.',
+  bayar_tidak_valid: 'Jumlah uang yang diterima tidak valid.',
+  bayar_kurang: 'Uang yang diterima kurang dari tagihan.',
+  diskon_tidak_valid: 'Diskon tidak valid (melebihi harga atau bukan angka bulat).',
+  diskon_melebihi_batas: 'Diskon melebihi batas kasir. Minta Admin atau Owner untuk memprosesnya.',
+  diskon_maks_tidak_valid: 'Batas diskon kasir harus angka bulat 0 sampai 100.',
+  pembulatan_tidak_valid: 'Pembulatan harus 0, 100, 500, atau 1.000.',
+  id_klien_tidak_valid: 'Permintaan transaksi tidak valid. Muat ulang halaman lalu coba lagi.',
+  transaksi_tidak_tuntas: 'Transaksi sebelumnya belum tuntas diproses. Hubungi Owner atau Admin sebelum mengulang.',
+  transaksi_tidak_ada: 'Transaksi tidak ditemukan.',
+  sudah_dibatalkan: 'Transaksi ini sudah dibatalkan.',
+  tanggal_tidak_valid: 'Tanggal tidak valid. Tidak boleh di masa depan atau lebih dari 2 tahun lalu.',
+  keterangan_wajib: 'Keterangan wajib diisi (minimal 3 huruf) untuk kategori "Lain-lain".',
+  kategori_tidak_valid: 'Kategori tidak valid.',
+  entri_tidak_ada: 'Catatan tidak ditemukan.',
+  rentang_tidak_valid: 'Rentang tanggal tidak valid.',
+  rentang_terlalu_panjang: 'Rentang tanggal maksimal 366 hari.',
+  modal_awal_tidak_valid: 'Modal awal harus angka bulat (rupiah).',
+  kas_hitung_tidak_valid: 'Uang tunai di laci harus angka bulat (rupiah).',
+  catatan_selisih_wajib: 'Kas tidak sama dengan yang seharusnya. Isi catatan penyebab selisih.',
   jaringan: 'Tidak bisa terhubung ke Google Sheets. Periksa internet lalu coba lagi.'
 };
 const pesanGalat = (e) => {
   const dasar = pesanDasar(e); const d = (e && e.data) || {};
-  const p = d.produk_id && typeof M !== 'undefined' ? M.produk.find((x) => x.id === d.produk_id) : null;
-  return dasar + (p ? ` (${p.nama})` : '') + (d.tersedia !== undefined ? ` Stok tersedia: ${d.tersedia}.` : '');
+  const p = d.produk_id ? ((typeof P !== 'undefined' && P.produk.find((x) => x.id === d.produk_id)) || (typeof M !== 'undefined' && M.produk.find((x) => x.id === d.produk_id)) || null) : null;
+  return dasar + (p ? ` (${p.nama})` : '') + (d.tersedia !== undefined ? ` Stok tersedia: ${d.tersedia}.` : '') + (d.maks !== undefined ? ` Batas diskon: ${d.maks}%.` : '') + (d.tagihan !== undefined ? ` Tagihan: ${rp(d.tagihan)}.` : '');
 };
 const pesanDasar = (e) => PESAN[e && e.kode] || (e && e.kode && e.kode.startsWith('galat_server') ? 'Server menolak permintaan: ' + e.kode.replace('galat_server: ', '') : 'Terjadi kesalahan. Coba lagi.');
 
@@ -145,7 +166,7 @@ $('modal').addEventListener('click', (e) => { if (e.target === e.currentTarget) 
 
 const kolom = (nama, label, o = {}) => `
   <label class="block text-sm font-semibold text-stone-600">${label}
-    <input name="${nama}" type="${o.tipe || 'text'}" ${o.wajib === false ? '' : 'required'} value="${esc(o.nilai || '')}" placeholder="${esc(o.contoh || '')}"
+    <input name="${nama}" type="${o.tipe || 'text'}" ${o.wajib === false ? '' : 'required'} value="${esc(o.nilai ?? '')}" placeholder="${esc(o.contoh || '')}"
       autocomplete="${o.auto || 'off'}" ${o.mode ? `inputmode="${o.mode}"` : ''} ${o.maks ? `maxlength="${o.maks}"` : ''} ${o.min ? `minlength="${o.min}"` : ''}
       ${o.nonaktif ? 'disabled' : ''} autocapitalize="none" spellcheck="false"
       class="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2.5 text-base font-semibold text-stone-800 disabled:bg-stone-100 disabled:text-stone-500">
@@ -199,7 +220,7 @@ const bolehLihat = (v) => !v.izin || S.izin.includes(v.izin);
 function renderHeader() {
   const nama = (S.toko && S.toko.nama_toko) || CONFIG.nama;
   $('p-header').innerHTML = `
-    <div class="mx-auto flex max-w-[480px] items-center gap-3 px-4 py-3 md:max-w-3xl">
+    <div class="mx-auto flex max-w-[480px] items-center gap-3 px-4 py-3 md:max-w-3xl lg:max-w-6xl">
       <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-biru text-white">${ic('store', 'w-6 h-6')}</span>
       <div class="min-w-0">
         <h1 class="truncate font-display text-lg font-extrabold leading-tight text-biru">${esc(nama)}</h1>
@@ -225,7 +246,7 @@ function renderNav() {
   nav.classList.toggle('hidden', !S.pengguna);
   if (!S.pengguna) return;
   nav.innerHTML = `
-    <div class="mx-auto flex max-w-[480px] items-stretch justify-around border-t border-stone-200 bg-white px-2 pt-1.5 shadow-[0_-4px_16px_rgba(16,24,40,.06)] md:max-w-3xl">
+    <div class="mx-auto flex max-w-[480px] items-stretch justify-around border-t border-stone-200 bg-white px-2 pt-1.5 shadow-[0_-4px_16px_rgba(16,24,40,.06)] md:max-w-3xl lg:max-w-6xl">
       ${item.map(([k, v]) => {
         const aktif = k === S.rute || (k === 'lainnya' && lain.some(([n]) => n === S.rute));
         return `<button type="button" data-aksi="pindah" data-ke="${k}" aria-current="${aktif ? 'page' : 'false'}"

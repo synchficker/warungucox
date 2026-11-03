@@ -7,6 +7,7 @@ function Sheet(nama) {
   this.getLastColumn = () => Math.max(1, ...this.data.map((r) => (r || []).length));
   this.getMaxRows = () => this.maxRows;
   this.setFrozenRows = () => {};
+  this.insertRowsAfter = (n, k) => { this.maxRows += k; };
   this.appendRow = (r) => { this.data[this.getLastRow()] = r.slice(); };
   this.deleteRow = (n) => { this.data.splice(n - 1, 1); };
   this.insertRowsFake = () => {};
@@ -17,7 +18,7 @@ function Sheet(nama) {
       setValues: (v) => { v.forEach((row, i) => row.forEach((x, j) => { (self.data[r - 1 + i] = self.data[r - 1 + i] || [])[c - 1 + j] = x; })); return rg; },
       setValue: (x) => { (self.data[r - 1] = self.data[r - 1] || [])[c - 1] = x; return rg; },
       setFontWeight: () => rg, setBackground: () => rg,
-      setNumberFormat: (f) => { if (nr === 1 && nc === 1) { (self.fmt = self.fmt || {})[r + ',' + c] = f; } return rg; }
+      setNumberFormat: (f) => { self.fmt = self.fmt || {}; for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) self.fmt[(r + i) + ',' + (c + j)] = f; return rg; }
     };
     return rg;
   };
@@ -30,10 +31,15 @@ tambah('Produk', ['id', 'nama', 'kategori', 'satuan', 'harga_beli', 'harga_jual'
 tambah('Supplier', ['id', 'nama', 'kontak', 'telepon', 'kota', 'kategori', 'termin_hari'], [['S01', 'UD A', 'x', '1', 'Depok', 'beras', 7]]);
 tambah('_Log', ['waktu', 'op_id', 'aksi', 'produk', 'perubahan', 'catatan']);
 
+let jamPalsu = null;   // untuk uji lintas hari: setJam('2026-10-01T09:00:00Z')
+class DatePalsu extends Date {
+  constructor(...a) { if (a.length === 0 && jamPalsu !== null) super(jamPalsu); else super(...a); }
+  static now() { return jamPalsu !== null ? jamPalsu : Date.now(); }
+}
 const ctxDrive = { n: 0, files: [] };
 const props = { KUNCI: 'KunciRahasia123' }; const cacheMem = {};
 const ctx = {
-  console, Date, Math, JSON, Number, String, isFinite, Object, Array,
+  console, Date: DatePalsu, Math, JSON, Number, String, isFinite, Object, Array,
   SpreadsheetApp: { getActive: () => ({ getSheetByName: (n) => sheets[n] || null, insertSheet: (n) => (sheets[n] = new Sheet(n)) }), getUi: () => ({}) },
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k], setProperty: (k, v) => { props[k] = v; } }) },
   CacheService: { getScriptCache: () => ({ get: (k) => (k in cacheMem ? cacheMem[k] : null), put: (k, v) => { cacheMem[k] = v; }, remove: (k) => { delete cacheMem[k]; } }) },
@@ -58,4 +64,4 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'Code.gs'), 'utf8') +
 
 const post = (o) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(o) } }).isi);
 const get = (q) => JSON.parse(ctx.doGet({ parameter: q }).isi);
-module.exports = { post, get, sheets, cacheMem, props, ctxDrive };
+module.exports = { post, get, sheets, cacheMem, props, ctxDrive, setJam: (iso) => { jamPalsu = iso === null ? null : new Date(iso).getTime(); } };

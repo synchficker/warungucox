@@ -21,6 +21,7 @@
       dialog#modal { position: static !important; display: block !important; margin: 0 !important; width: auto !important; max-width: none !important; overflow: visible !important; box-shadow: none !important; }
       dialog#modal::backdrop { display: none !important; }
       #modal-isi, #modal-isi > div { max-height: none !important; overflow: visible !important; }
+      #struk-cetak { width: 72mm !important; max-width: 72mm !important; margin: 0 auto !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; font-size: 11px !important; }
     }
   </style>
 </head>
@@ -28,7 +29,7 @@
 <body class="bg-[#DCE3EA] text-stone-800 font-sans antialiased">
 
   <!-- Cangkang yang sama dengan halaman toko: selebar HP, melebar di layar besar -->
-  <div id="app-shell" class="relative mx-auto min-h-screen w-full max-w-[480px] bg-latar shadow-[0_0_40px_rgba(16,24,40,.18)] md:max-w-3xl">
+  <div id="app-shell" class="relative mx-auto min-h-screen w-full max-w-[480px] bg-latar shadow-[0_0_40px_rgba(16,24,40,.18)] md:max-w-3xl lg:max-w-6xl">
     <header id="p-header" class="sticky top-0 z-20 bg-white shadow-[0_1px_3px_rgba(16,24,40,.08)]"></header>
     <main id="p-main" class="pb-28"></main>
   </div>
@@ -49,12 +50,14 @@
   <script src="panel/core.js"></script>
   <script src="panel/auth.js"></script>
   <script src="panel/dashboard.js"></script>
+  <script src="panel/pos.js"></script>
   <script src="panel/master.js"></script>
   <script src="panel/barcode.js"></script>
   <script src="panel/produk.js"></script>
   <script src="panel/kategori.js"></script>
   <script src="panel/supplier.js"></script>
   <script src="panel/stok.js"></script>
+  <script src="panel/keuangan.js"></script>
   <script src="panel/users.js"></script>
   <script src="panel/settings.js"></script>
   <script src="panel/audit.js"></script>

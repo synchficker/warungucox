@@ -309,10 +309,13 @@ function renderHeader() {
       <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-biru text-white">${ic('store', 'w-6 h-6')}</span>
       <h1 class="font-display text-lg font-extrabold leading-tight text-biru">${CONFIG.nama}</h1>
       <div class="ml-auto flex items-center gap-2">
-        <button type="button" data-aksi="buka-riwayat" aria-label="Riwayat penjualan" title="Riwayat penjualan"
+        ${CONFIG.menuLamaAktif
+          ? `<button type="button" data-aksi="buka-riwayat" aria-label="Riwayat penjualan" title="Riwayat penjualan"
           class="grid h-10 w-10 shrink-0 place-items-center rounded-full text-stone-600 transition hover:bg-langit/10 hover:text-biru">${ic('history')}</button>
         <button type="button" data-aksi="kelola" class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-biru px-4 py-2 text-sm font-bold text-biru transition hover:bg-biru hover:text-white">
-          ${ic('settings-2', 'w-4 h-4')}Kelola</button>
+          ${ic('settings-2', 'w-4 h-4')}Kelola</button>`
+          : `<a href="panel.html" class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-biru px-4 py-2 text-sm font-bold text-biru transition hover:bg-biru hover:text-white">
+          ${ic('log-in', 'w-4 h-4')}Panel staf</a>`}
       </div>
     </div>`;
   icons();
@@ -459,8 +462,8 @@ function renderKeranjang() {
         <a href="https://wa.me/${CONFIG.waNumber}?text=${encodeURIComponent(pesan)}" target="_blank" rel="noopener"
           class="flex w-full items-center justify-center gap-2 rounded-full bg-jingga py-3 font-extrabold text-stone-900">
           ${ic('message-circle')} Pesan via WhatsApp</a>
-        <button type="button" data-aksi="kasir" class="flex w-full items-center justify-center gap-2 rounded-full border border-biru py-2.5 text-sm font-bold text-biru">
-          ${ic('lock', 'w-4 h-4')} Kasir: selesaikan dan kirim struk</button>
+        ${CONFIG.menuLamaAktif ? `<button type="button" data-aksi="kasir" class="flex w-full items-center justify-center gap-2 rounded-full border border-biru py-2.5 text-sm font-bold text-biru">
+          ${ic('lock', 'w-4 h-4')} Kasir: selesaikan dan kirim struk</button>` : ''}
         <button type="button" data-aksi="kosongkan" class="w-full rounded-full py-2 text-sm font-bold text-tomat">Kosongkan keranjang</button>
       </div>`;
   }

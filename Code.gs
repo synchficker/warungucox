@@ -1,6 +1,6 @@
 /**
  * Toko Sembako si Ucox | Code.gs
- * Versi: Tahap 3 (Autentikasi & Peran + Master Data + Inventaris) - berbasis versi FINAL FIX 01 Nov 2026
+ * Versi: Tahap 5 (Autentikasi & Peran + Master Data + Inventaris + POS + Keuangan) - berbasis versi FINAL FIX 01 Nov 2026
  * Jalur lama (halaman toko + kunci sinkron) tetap utuh. Jalur multi-user ada di bagian MODUL 1 di bawah.
  */
 
@@ -293,20 +293,29 @@ function periksa_() {
  * Jalur lama (kunci sinkron untuk halaman toko) tetap berjalan.
  * Jalur baru: POST { aksi, token, ... } dari panel.html.
  * ===================================================================== */
-const TAB_BARU = { pengguna: 'Pengguna', sesi: 'Sesi', pengaturan: 'Pengaturan', audit: 'Audit', mutasi: 'Mutasi' };
+const TAB_BARU = { pengguna: 'Pengguna', sesi: 'Sesi', pengaturan: 'Pengaturan', audit: 'Audit', mutasi: 'Mutasi', transaksi: 'Transaksi', itemtransaksi: 'ItemTransaksi', keuangan: 'Keuangan', tutupkas: 'TutupKas' };
 const KOLOM_BARU = {
   pengguna: ['id', 'username', 'nama', 'peran', 'hash', 'garam', 'aktif', 'dibuat', 'login_terakhir', 'wajib_ganti'],
   sesi: ['token_hash', 'user_id', 'dibuat', 'kedaluwarsa'],
   pengaturan: ['kunci', 'nilai'],
   audit: ['waktu', 'username', 'peran', 'aksi', 'target', 'detail'],
-  mutasi: ['id', 'waktu', 'produk_id', 'produk', 'jenis', 'jumlah', 'stok_sebelum', 'stok_sesudah', 'harga_beli', 'supplier_id', 'ref', 'catatan', 'user']
+  mutasi: ['id', 'waktu', 'produk_id', 'produk', 'jenis', 'jumlah', 'stok_sebelum', 'stok_sesudah', 'harga_beli', 'supplier_id', 'ref', 'catatan', 'user'],
+  transaksi: ['no', 'waktu', 'tanggal', 'kasir', 'kasir_nama', 'jumlah_item', 'kotor', 'diskon_item', 'diskon_trx', 'total', 'pembulatan', 'tagihan', 'metode', 'bayar', 'kembali',
+    'status', 'catatan', 'id_klien', 'item_awal', 'item_n', 'batal_oleh', 'batal_waktu', 'batal_alasan'],
+  itemtransaksi: ['no', 'produk_id', 'produk', 'satuan', 'qty', 'harga', 'diskon', 'subtotal', 'harga_beli'],
+  keuangan: ['id', 'tanggal', 'jenis', 'kategori', 'jumlah', 'metode', 'keterangan', 'oleh', 'waktu', 'status', 'diubah_oleh', 'diubah_waktu', 'batal_alasan'],
+  tutupkas: ['id', 'tanggal', 'waktu', 'oleh', 'modal_awal', 'penjualan_tunai', 'pemasukan_tunai', 'pengeluaran_tunai', 'kas_seharusnya', 'kas_hitung', 'selisih', 'catatan']
 };
 const KOLOM_TEKS_BARU = {
   pengguna: ['id', 'username', 'nama', 'peran', 'hash', 'garam', 'aktif', 'dibuat', 'login_terakhir', 'wajib_ganti'],
   sesi: ['token_hash', 'user_id'],
   pengaturan: ['kunci', 'nilai'],
   audit: ['waktu', 'username', 'peran', 'aksi', 'target', 'detail'],
-  mutasi: ['id', 'waktu', 'produk_id', 'produk', 'jenis', 'supplier_id', 'ref', 'catatan', 'user']
+  mutasi: ['id', 'waktu', 'produk_id', 'produk', 'jenis', 'supplier_id', 'ref', 'catatan', 'user'],
+  transaksi: ['no', 'waktu', 'tanggal', 'kasir', 'kasir_nama', 'metode', 'status', 'catatan', 'id_klien', 'batal_oleh', 'batal_waktu', 'batal_alasan'],
+  itemtransaksi: ['no', 'produk_id', 'produk', 'satuan'],
+  keuangan: ['id', 'tanggal', 'jenis', 'kategori', 'metode', 'keterangan', 'oleh', 'waktu', 'status', 'diubah_oleh', 'diubah_waktu', 'batal_alasan'],
+  tutupkas: ['id', 'tanggal', 'waktu', 'oleh', 'catatan']
 };
 
 const PERAN = ['owner', 'admin', 'kasir'];
@@ -336,7 +345,10 @@ const PENGATURAN_AWAL = {
   wa_nomor: '628989921788',
   wa_tampil: '0898-9921-788',
   stok_menipis: '10',
-  pesan_struk: 'Terima kasih sudah belanja!'
+  pesan_struk: 'Terima kasih sudah belanja!',
+  diskon_maks_kasir: '10',   // persen dari harga kotor; di atas ini harus Admin/Owner
+  jual_stok_kurang: 'tidak',   // 'ya' = kasir boleh menjual walau stok tercatat kurang (stok dikunci 0)
+  pembulatan: '0'   // pembulatan ke atas untuk pembayaran tunai: 0, 100, 500, atau 1000
 };
 
 /* ---------- Tabel ---------- */
@@ -352,6 +364,19 @@ function tabBaru_(k) {
     if (k === 'pengaturan') Object.keys(PENGATURAN_AWAL).forEach((n) => sh.appendRow([n, PENGATURAN_AWAL[n]]));
   }
   return sh;
+}
+
+function runTeks_(k) {   // kolom bertipe teks yang berurutan dikelompokkan: satu panggilan format per kelompok
+  const kol = KOLOM_BARU[k], idx = KOLOM_TEKS_BARU[k].map((c) => kol.indexOf(c)).sort((a, b) => a - b), runs = [];
+  idx.forEach((i) => { const l = runs[runs.length - 1]; if (l && l[0] + l[1] === i) l[1]++; else runs.push([i, 1]); });
+  return runs.map((r) => [r[0] + 1, r[1]]);
+}
+function tambahBarisBaru_(k, baris) {   // menulis blok baris; format teks dipasang dulu pada baris tujuan (tab tumbuh melewati 1000 baris awal)
+  const sh = tabBaru_(k), n = sh.getLastRow() + 1, akhir = n + baris.length - 1;
+  if (akhir > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), Math.max(500, akhir - sh.getMaxRows()));
+  runTeks_(k).forEach((r) => sh.getRange(n, r[0], baris.length, r[1]).setNumberFormat('@'));
+  sh.getRange(n, 1, baris.length, KOLOM_BARU[k].length).setValues(baris);
+  return n;
 }
 
 function bacaBaru_(k) {
@@ -393,7 +418,7 @@ function sama_(a, b) {   // perbandingan waktu-tetap
 function idBaru_(awalan) { return awalan + Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase(); }
 
 function audit_(u, aksi, target, detail) {
-  tabBaru_('audit').appendRow([waktu_(), u ? u.username : '-', u ? u.peran : '-', aksi, teks_(target), teks_(detail)]);
+  tambahBarisBaru_('audit', [[waktu_(), u ? u.username : '-', u ? u.peran : '-', aksi, teks_(target), teks_(detail)]]);
 }
 
 /* ---------- Pengaturan toko ---------- */
@@ -619,6 +644,9 @@ function aksiPengaturanSimpan_(s, p) {
   const sm = Number(d.stok_menipis); if (!isFinite(sm) || sm < 0 || sm > 9999) return { ok: false, galat: 'stok_menipis_tidak_valid' };
   baru.stok_menipis = String(Math.round(sm));
   baru.pesan_struk = teks_(d.pesan_struk).slice(0, 80);
+  if (d.diskon_maks_kasir !== undefined) { const v = Number(d.diskon_maks_kasir); if (!Number.isInteger(v) || v < 0 || v > 100) return gal_('diskon_maks_tidak_valid'); baru.diskon_maks_kasir = String(v); }
+  if (d.jual_stok_kurang !== undefined) baru.jual_stok_kurang = d.jual_stok_kurang === 'ya' ? 'ya' : 'tidak';
+  if (d.pembulatan !== undefined) { const v = Number(d.pembulatan); if (PEMBULATAN_OK.indexOf(v) < 0) return gal_('pembulatan_tidak_valid'); baru.pembulatan = String(v); }
   const lama = ambilPengaturan_(true);
   const sh = tabBaru_('pengaturan');
   const baris = {};
@@ -656,7 +684,8 @@ function aksiDashboard_(s) {
     jumlah_menipis: menipis.length,
     menipis: menipis.slice(0, 8).map((p) => ({ id: p.id, nama: p.nama, stok: p.stok, satuan: p.satuan })),
     nilai_persediaan: lihatModal ? d.produk.reduce((a, p) => a + p.stok * p.harga_beli, 0) : null,
-    pengguna_aktif: null
+    pengguna_aktif: null,
+    penjualan_hari_ini: ringkasHariIni_(s.user)
   };
   if (s.user.peran === 'owner') out.pengguna_aktif = bacaBaru_('pengguna').baris.filter((r) => teks_(r.aktif) === 'ya').length;
   return out;
@@ -713,13 +742,27 @@ const HANDLER_ = {
   masuk_simpan: { izin: 'barang_masuk', jalan: (s, p) => aksiMasukSimpan_(s, p) },
   stok_sesuaikan: { izin: 'penyesuaian_stok', jalan: (s, p) => aksiStokSesuaikan_(s, p) },
   stok_min_simpan: { izin: 'penyesuaian_stok', jalan: (s, p) => aksiStokMinSimpan_(s, p) },
-  mutasi_daftar: { izin: 'barang_masuk', jalan: (s, p) => aksiMutasiDaftar_(s, p) }
+  mutasi_daftar: { izin: 'barang_masuk', jalan: (s, p) => aksiMutasiDaftar_(s, p) },
+  // Tahap 4: POS
+  pos_produk: { izin: 'pos', jalan: () => aksiPosProduk_() },
+  transaksi_buat: { izin: 'pos', jalan: (s, p) => aksiTransaksiBuat_(s, p) },
+  transaksi_daftar: { izin: 'pos', jalan: (s, p) => aksiTransaksiDaftar_(s, p) },
+  transaksi_detail: { izin: 'pos', jalan: (s, p) => aksiTransaksiDetail_(s, p) },
+  transaksi_batal: { izin: 'laporan', jalan: (s, p) => aksiTransaksiBatal_(s, p) },
+  // Tahap 5: Keuangan
+  keuangan_catat: { izin: 'pengeluaran', jalan: (s, p) => aksiKeuanganCatat_(s, p) },
+  keuangan_batal: { izin: 'pengeluaran', jalan: (s, p) => aksiKeuanganBatal_(s, p) },
+  keuangan_daftar: { izin: 'pengeluaran', jalan: (s, p) => aksiKeuanganDaftar_(s, p) },
+  laporan_keuangan: { izin: 'laporan', jalan: (s, p) => aksiLaporanKeuangan_(s, p) },
+  kas_hitung: { izin: 'laporan', jalan: (s, p) => aksiKasHitung_(s, p) },
+  kas_tutup: { izin: 'laporan', jalan: (s, p) => aksiKasTutup_(s, p) },
+  kas_riwayat: { izin: 'laporan', jalan: (s, p) => aksiKasRiwayat_(s, p) }
 };
 
 /* ---------- Menu Google Sheets ---------- */
 function siapkanMultiUser() {
   Object.keys(TAB_BARU).forEach((k) => tabBaru_(k));
-  SpreadsheetApp.getUi().alert('Tab Pengguna, Sesi, Pengaturan, Audit, dan Mutasi sudah siap.\n\nLangkah berikutnya: buka panel.html di website, lalu buat akun Owner pertama memakai kunci sinkron.');
+  SpreadsheetApp.getUi().alert('Tab Pengguna, Sesi, Pengaturan, Audit, Mutasi, Transaksi, ItemTransaksi, Keuangan, dan TutupKas sudah siap.\n\nLangkah berikutnya: buka panel.html di website, lalu buat akun Owner pertama memakai kunci sinkron.');
 }
 
 function resetSandiDarurat() {   // untuk Owner yang lupa kata sandi; hanya bisa dijalankan oleh editor Spreadsheet
@@ -959,7 +1002,7 @@ function izinkanDrive() {   // dijalankan sekali dari menu agar Google meminta i
 const JENIS_MUTASI = {
   stok_awal: 'Stok awal', masuk: 'Barang masuk', temuan: 'Ditemukan', opname: 'Hitung ulang (opname)',
   rusak: 'Rusak', kadaluarsa: 'Kadaluarsa', hilang: 'Hilang', pakai_sendiri: 'Dipakai sendiri', retur_supplier: 'Retur ke supplier',
-  penjualan: 'Penjualan', koreksi_kelola: 'Koreksi (menu Kelola lama)'
+  penjualan: 'Penjualan', batal_jual: 'Pembatalan penjualan', koreksi_kelola: 'Koreksi (menu Kelola lama)'
 };
 const SESUAI_ARAH = { rusak: -1, kadaluarsa: -1, hilang: -1, pakai_sendiri: -1, retur_supplier: -1, temuan: 1, opname: 0 };
 const SESUAI_WAJIB_CATATAN = ['hilang', 'temuan', 'opname'];
@@ -974,13 +1017,14 @@ function pastikanStokMin_() {   // tambah kolom opsional stok_min di tab Produk 
 function tabProduk_() { pastikanStokMin_(); return bacaTab_('produk'); }
 const stokMinEfektif_ = (stokMin, batasToko) => (stokMin === null || stokMin === undefined ? batasToko : stokMin);
 
-function catatMutasi_(m) {
-  const sh = tabBaru_('mutasi');
-  const id = 'M' + ('000000' + sh.getLastRow()).slice(-6);   // baris tidak pernah dihapus, jadi urutan selalu naik
-  sh.appendRow([id, waktu_(), m.produk_id, m.nama, m.jenis, m.jumlah, m.sebelum, m.sesudah,
-    m.harga_beli === undefined || m.harga_beli === null ? '' : m.harga_beli, m.supplier || '', m.ref || '', teks_(m.catatan).slice(0, 200), m.user || '-']);
-  return id;
+const barisMutasi_ = (m, id) => [id, waktu_(), m.produk_id, m.nama, m.jenis, m.jumlah, m.sebelum, m.sesudah,
+  m.harga_beli === undefined || m.harga_beli === null ? '' : m.harga_beli, m.supplier || '', m.ref || '', teks_(m.catatan).slice(0, 200), m.user || '-'];
+function tulisMutasi_(daftar) {   // satu blok tulis untuk banyak mutasi (penjualan dengan banyak barang)
+  if (!daftar.length) return;
+  const n = tabBaru_('mutasi').getLastRow() + 1;   // baris tidak pernah dihapus, jadi urutan nomor selalu naik
+  tambahBarisBaru_('mutasi', daftar.map((m, i) => barisMutasi_(m, 'M' + ('000000' + (n - 1 + i)).slice(-6))));
 }
+function catatMutasi_(m) { tulisMutasi_([m]); }
 
 /* Satu-satunya pintu perubahan stok. Menolak stok negatif; mengembalikan {sebelum, sesudah}. */
 function ubahStok_(t, r, delta, meta) {
@@ -990,7 +1034,8 @@ function ubahStok_(t, r, delta, meta) {
   if (sesudah > STOK_MAKS) throw new Error('stok_melebihi_batas');
   tulisSel_(t, 'produk', r._baris, 'stok', sesudah);
   r.stok = sesudah;
-  catatMutasi_(Object.assign({ produk_id: teks_(r.id), nama: teks_(r.nama), jumlah: delta, sebelum: sebelum, sesudah: sesudah }, meta));
+  const m = Object.assign({ produk_id: teks_(r.id), nama: teks_(r.nama), jumlah: delta, sebelum: sebelum, sesudah: sesudah }, meta);
+  if (meta && meta.antrian) meta.antrian.push(m); else catatMutasi_(m);   // antrian: pemanggil menulis sekaligus lewat tulisMutasi_()
   return { sebelum: sebelum, sesudah: sesudah };
 }
 
@@ -1004,7 +1049,7 @@ function refBaru_(awalan) {   // contoh: BM-261101-001 (nomor urut per hari)
       const m = new RegExp('^' + awalan + '-' + tgl + '-(\\d+)$').exec(teks_(x[0])); if (m) maks = Math.max(maks, Number(m[1]));
     });
   }
-  return awalan + '-' + tgl + '-' + ('00' + (maks + 1)).slice(-3);
+  return awalan + '-' + tgl + '-' + String(maks + 1).padStart(3, '0');
 }
 
 function dataInventaris_() {
@@ -1108,4 +1153,455 @@ function aksiMutasiDaftar_(s, p) {
 function siapkanInventaris() {   // menu: menyiapkan tab Mutasi dan kolom stok_min
   tabBaru_('mutasi'); pastikanStokMin_();
   SpreadsheetApp.getUi().alert('Inventaris siap: tab Mutasi dan kolom stok_min (tab Produk) sudah tersedia.');
+}
+
+/* =====================================================================
+ * MODUL 4: POINT OF SALE (transaksi penjualan)
+ * Harga SELALU diambil dari Sheet saat transaksi (angka dari browser tidak dipercaya).
+ * Semua validasi dilakukan sebelum penulisan; stok berkurang lewat ubahStok_() sehingga tercatat di Mutasi.
+ * Tab Transaksi = kepala transaksi; tab ItemTransaksi = rincian barang (salinan nama, harga, modal saat transaksi).
+ * ===================================================================== */
+const METODE_BAYAR = ['tunai', 'qris', 'transfer'];
+const PEMBULATAN_OK = [0, 100, 500, 1000];
+
+function cfgPos_() {
+  const p = ambilPengaturan_(false);
+  return { diskon_maks_kasir: angka_(p.diskon_maks_kasir), jual_stok_kurang: p.jual_stok_kurang === 'ya', pembulatan: angka_(p.pembulatan) };
+}
+
+/* Hitungan uang. Dipakai server DAN dicerminkan persis di browser (panel/pos.js) agar angka layar = angka tersimpan. */
+function hitungTrx_(baris, dt, metode, unit) {
+  let kotor = 0, dItem = 0;
+  for (let i = 0; i < baris.length; i++) {
+    const l = baris[i], bruto = l.harga * l.qty;
+    if (l.diskon < 0 || l.diskon > bruto) return { galat: 'diskon_tidak_valid', produk_id: l.produk_id };
+    kotor += bruto; dItem += l.diskon;
+  }
+  const setelah = kotor - dItem;
+  let dTrx = 0;
+  if (dt && dt.jenis === 'persen') {
+    const v = Number(dt.nilai) || 0;
+    if (!Number.isInteger(v) || v < 0 || v > 100) return { galat: 'diskon_tidak_valid' };
+    dTrx = Math.floor(setelah * v / 100);
+  } else if (dt && dt.jenis === 'rupiah') {
+    const v = Number(dt.nilai) || 0;
+    if (!Number.isInteger(v) || v < 0 || v > setelah) return { galat: 'diskon_tidak_valid' };
+    dTrx = v;
+  }
+  const total = setelah - dTrx;
+  const pembulatan = metode === 'tunai' && unit > 0 ? Math.ceil(total / unit) * unit - total : 0;   // pembulatan ke atas, hanya untuk tunai
+  return { kotor: kotor, diskon_item: dItem, diskon_trx: dTrx, total: total, pembulatan: pembulatan, tagihan: total + pembulatan };
+}
+
+const barisKeObj_ = (k, r) => { const o = {}; KOLOM_BARU[k].forEach((c, j) => { o[c] = r[j]; }); return o; };
+function trxPublik_(o) {
+  const n = (v) => Number(v) || 0;
+  return { no: teks_(o.no), waktu: teks_(o.waktu), tanggal: teks_(o.tanggal), kasir: teks_(o.kasir), kasir_nama: teks_(o.kasir_nama), jumlah_item: n(o.jumlah_item),
+    kotor: n(o.kotor), diskon_item: n(o.diskon_item), diskon_trx: n(o.diskon_trx), total: n(o.total), pembulatan: n(o.pembulatan), tagihan: n(o.tagihan),
+    metode: teks_(o.metode), bayar: n(o.bayar), kembali: n(o.kembali), status: teks_(o.status), catatan: teks_(o.catatan),
+    batal_oleh: teks_(o.batal_oleh), batal_waktu: teks_(o.batal_waktu), batal_alasan: teks_(o.batal_alasan) };
+}
+
+function trxTerakhir_(n) {
+  const sh = tabBaru_('transaksi'), akhir = sh.getLastRow();
+  if (akhir < 2) return [];
+  const awal = Math.max(2, akhir - n + 1);
+  return sh.getRange(awal, 1, akhir - awal + 1, KOLOM_BARU.transaksi.length).getValues().map((r, i) => ({ baris: awal + i, o: barisKeObj_('transaksi', r) }));
+}
+function trxCari_(no) {   // cari per nomor: baca kolom nomor saja (murah), lalu satu baris penuh
+  const sh = tabBaru_('transaksi'), akhir = sh.getLastRow();
+  if (akhir < 2) return null;
+  const awal = Math.max(2, akhir - 19999);
+  const kol = sh.getRange(awal, 1, akhir - awal + 1, 1).getValues();
+  for (let i = kol.length - 1; i >= 0; i--) {
+    if (teks_(kol[i][0]) === no) { const n = awal + i; return { baris: n, o: barisKeObj_('transaksi', sh.getRange(n, 1, 1, KOLOM_BARU.transaksi.length).getValues()[0]) }; }
+  }
+  return null;
+}
+function trxPadaTanggal_(tanggal) {   // transaksi tersusun menurut waktu, jadi satu hari = satu blok baris berurutan
+  const sh = tabBaru_('transaksi'), akhir = sh.getLastRow();
+  if (akhir < 2) return [];
+  const iT = KOLOM_BARU.transaksi.indexOf('tanggal') + 1;
+  const tgl = sh.getRange(2, iT, akhir - 1, 1).getValues();
+  let a = -1, z = -1;
+  for (let i = tgl.length - 1; i >= 0; i--) { if (teks_(tgl[i][0]) === tanggal) { if (z < 0) z = i; a = i; } else if (z >= 0) break; }
+  if (z < 0) return [];
+  return sh.getRange(2 + a, 1, z - a + 1, KOLOM_BARU.transaksi.length).getValues().map((r, i) => ({ baris: 2 + a + i, o: barisKeObj_('transaksi', r) })).filter((x) => teks_(x.o.tanggal) === tanggal);
+}
+function itemTrx_(o) {
+  const n = Number(o.item_n) || 0, awal = Number(o.item_awal) || 0;
+  if (!n || !awal) return [];
+  const sh = tabBaru_('itemtransaksi'), num = (v) => Number(v) || 0;
+  return sh.getRange(awal, 1, n, KOLOM_BARU.itemtransaksi.length).getValues().map((r) => {
+    const x = barisKeObj_('itemtransaksi', r);
+    return { produk_id: teks_(x.produk_id), produk: teks_(x.produk), satuan: teks_(x.satuan), qty: num(x.qty), harga: num(x.harga), diskon: num(x.diskon), subtotal: num(x.subtotal) };
+  });
+}
+function noTransaksi_() {
+  const tgl = waktu_().slice(2, 10).replace(/-/g, '');
+  const sh = tabBaru_('transaksi'), akhir = sh.getLastRow();
+  let maks = 0;
+  if (akhir > 1) {
+    const awal = Math.max(2, akhir - 499);
+    sh.getRange(awal, 1, akhir - awal + 1, 1).getValues().forEach((x) => { const m = new RegExp('^TRX-' + tgl + '-(\\d+)$').exec(teks_(x[0])); if (m) maks = Math.max(maks, Number(m[1])); });
+  }
+  return 'TRX-' + tgl + '-' + String(maks + 1).padStart(3, '0');
+}
+const bolehLihatTrx_ = (user, o) => user.peran !== 'kasir' || (teks_(o.kasir) === user.username && teks_(o.tanggal) === waktu_().slice(0, 10));
+
+/* ---------- Data untuk layar kasir (tanpa harga beli) ---------- */
+function aksiPosProduk_() {
+  const d = ambilData_(false);
+  return { ok: true, kategori: d.kategori, cfg: cfgPos_(), toko: ambilPengaturan_(false),
+    produk: d.produk.map((p) => ({ id: p.id, nama: p.nama, kategori: p.kategori, satuan: p.satuan, harga_jual: p.harga_jual, stok: p.stok, gambar: p.gambar, barcode: p.barcode })) };
+}
+
+/* ---------- Membuat transaksi ---------- */
+function hasilTrx_(o, duplikat) { return { ok: true, duplikat: !!duplikat, trx: trxPublik_(o), items: itemTrx_(o) }; }
+
+function aksiTransaksiBuat_(s, p) {
+  const d = p.trx || {};
+  const idKlien = teks_(d.id_klien);
+  if (!/^[A-Za-z0-9_-]{8,40}$/.test(idKlien)) return gal_('id_klien_tidak_valid');
+  const ada = trxTerakhir_(300).filter((x) => teks_(x.o.id_klien) === idKlien && teks_(x.o.kasir) === s.user.username)[0];
+  if (ada) {   // permintaan yang sama dikirim ulang (koneksi putus / tombol ditekan dua kali): kembalikan hasil lama, JANGAN catat lagi
+    if (teks_(ada.o.status) === 'proses') return { ok: false, galat: 'transaksi_tidak_tuntas', no: teks_(ada.o.no) };
+    return hasilTrx_(ada.o, true);
+  }
+  const cfg = cfgPos_();
+  const metode = teks_(d.metode); if (METODE_BAYAR.indexOf(metode) < 0) return gal_('metode_tidak_valid');
+  const items = Array.isArray(d.items) ? d.items : [];
+  if (!items.length) return gal_('keranjang_kosong');
+  if (items.length > 100) return gal_('item_terlalu_banyak');
+  const t = tabProduk_();
+  const idx = {}; t.baris.forEach((r) => { idx[teks_(r.id)] = r; });
+  const sudah = {}, lines = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i] || {}, r = idx[teks_(it.produk_id)];
+    if (!r) return { ok: false, galat: 'produk_tidak_ada', produk_id: teks_(it.produk_id) };
+    if (sudah[teks_(r.id)]) return gal_('item_kembar');
+    sudah[teks_(r.id)] = true;
+    const qty = bulat_(it.qty, 1, 10000); if (qty === null) return { ok: false, galat: 'jumlah_tidak_valid', produk_id: teks_(r.id) };
+    const diskon = teks_(it.diskon) === '' ? 0 : bulat_(it.diskon, 0, 100000000); if (diskon === null) return { ok: false, galat: 'diskon_tidak_valid', produk_id: teks_(r.id) };
+    const tersedia = angka_(r.stok), kurang = Math.max(0, qty - tersedia);
+    if (kurang && !cfg.jual_stok_kurang) return { ok: false, galat: 'stok_tidak_cukup', produk_id: teks_(r.id), tersedia: tersedia };
+    lines.push({ r: r, produk_id: teks_(r.id), qty: qty, harga: angka_(r.harga_jual), diskon: diskon, kurang: kurang });
+  }
+  const h = hitungTrx_(lines, d.diskon_trx, metode, cfg.pembulatan);
+  if (h.galat) return { ok: false, galat: h.galat, produk_id: h.produk_id };
+  if (s.user.peran === 'kasir' && h.kotor > 0 && (h.diskon_item + h.diskon_trx) * 100 > h.kotor * cfg.diskon_maks_kasir) {
+    return { ok: false, galat: 'diskon_melebihi_batas', maks: cfg.diskon_maks_kasir };   // diskon lebih besar dari batas kasir: harus Admin/Owner
+  }
+  let bayar = h.tagihan, kembali = 0;
+  if (metode === 'tunai') {
+    bayar = bulat_(d.bayar, 0, 1000000000); if (bayar === null) return gal_('bayar_tidak_valid');
+    if (bayar < h.tagihan) return { ok: false, galat: 'bayar_kurang', tagihan: h.tagihan };
+    kembali = bayar - h.tagihan;
+  }
+  const catatan = teks_(d.catatan).slice(0, 100);
+  const no = noTransaksi_(), wkt = waktu_(), sh2 = tabBaru_('itemtransaksi');
+  const itemAwal = sh2.getLastRow() + 1;
+  const jumlahItem = lines.reduce((a, l) => a + l.qty, 0);
+  // 1) kepala transaksi berstatus "proses"  2) rincian  3) stok + mutasi  4) status "selesai"
+  const nBaris = tambahBarisBaru_('transaksi', [[no, wkt, wkt.slice(0, 10), s.user.username, s.user.nama, jumlahItem, h.kotor, h.diskon_item, h.diskon_trx, h.total, h.pembulatan, h.tagihan,
+    metode, bayar, kembali, 'proses', catatan, idKlien, itemAwal, lines.length, '', '', '']]);
+  tambahBarisBaru_('itemtransaksi', lines.map((l) => [no, l.produk_id, teks_(l.r.nama), teks_(l.r.satuan), l.qty, l.harga, l.diskon, l.harga * l.qty - l.diskon, angka_(l.r.harga_beli)]));
+  const antrian = [], stokBaru = [];
+  lines.forEach((l) => {
+    const keluar = l.qty - l.kurang;
+    if (keluar > 0) ubahStok_(t, l.r, -keluar, { jenis: 'penjualan', ref: no, user: s.user.username, catatan: l.kurang ? 'stok kurang ' + l.kurang : '', antrian: antrian });
+    stokBaru.push({ id: l.produk_id, stok: angka_(l.r.stok) });
+  });
+  tulisMutasi_(antrian);
+  tabBaru_('transaksi').getRange(nBaris, KOLOM_BARU.transaksi.indexOf('status') + 1).setValue('selesai');
+  const o = barisKeObj_('transaksi', [no, wkt, wkt.slice(0, 10), s.user.username, s.user.nama, jumlahItem, h.kotor, h.diskon_item, h.diskon_trx, h.total, h.pembulatan, h.tagihan,
+    metode, bayar, kembali, 'selesai', catatan, idKlien, itemAwal, lines.length, '', '', '']);
+  const out = hasilTrx_(o, false); out.stok = stokBaru; return out;
+}
+
+/* ---------- Riwayat & rincian ---------- */
+function aksiTransaksiDaftar_(s, p) {
+  const hari = waktu_().slice(0, 10);
+  const tanggal = s.user.peran === 'kasir' ? hari : (/^\d{4}-\d{2}-\d{2}$/.test(teks_(p.tanggal)) ? teks_(p.tanggal) : hari);
+  let list = trxPadaTanggal_(tanggal).filter((x) => s.user.peran !== 'kasir' || teks_(x.o.kasir) === s.user.username);
+  list = list.reverse().slice(0, 300).map((x) => trxPublik_(x.o));
+  const sah = list.filter((x) => x.status !== 'batal');
+  return { ok: true, tanggal: tanggal, transaksi: list, ringkas: { jumlah: sah.length, total: sah.reduce((a, x) => a + x.tagihan, 0), batal: list.length - sah.length } };
+}
+function aksiTransaksiDetail_(s, p) {
+  const f = trxCari_(teks_(p.no));
+  if (!f) return gal_('transaksi_tidak_ada');
+  if (!bolehLihatTrx_(s.user, f.o)) return gal_('tidak_berhak');
+  return hasilTrx_(f.o, false);
+}
+
+/* ---------- Pembatalan (Owner/Admin): stok dikembalikan persis sesuai mutasi penjualan ---------- */
+function aksiTransaksiBatal_(s, p) {
+  const alasan = teks_(p.alasan).slice(0, 120);
+  if (alasan.length < 3) return gal_('catatan_wajib');
+  const f = trxCari_(teks_(p.no));
+  if (!f) return gal_('transaksi_tidak_ada');
+  if (teks_(f.o.status) === 'batal') return gal_('sudah_dibatalkan');
+  const sm = tabBaru_('mutasi'), akhir = sm.getLastRow(), kol = KOLOM_BARU.mutasi;
+  const t = tabProduk_(); const idx = {}; t.baris.forEach((r) => { idx[teks_(r.id)] = r; });
+  const antrian = []; let kembali = 0, hilang = 0;
+  if (akhir > 1) {
+    const awal = Math.max(2, akhir - 19999);
+    sm.getRange(awal, 1, akhir - awal + 1, kol.length).getValues().forEach((r) => {
+      const m = barisKeObj_('mutasi', r);
+      if (teks_(m.ref) !== teks_(f.o.no) || teks_(m.jenis) !== 'penjualan' || !(Number(m.jumlah) < 0)) return;
+      const prod = idx[teks_(m.produk_id)], qty = -Number(m.jumlah);
+      if (!prod) { hilang++; return; }   // produk sudah dihapus: tidak ada stok yang bisa dikembalikan
+      ubahStok_(t, prod, qty, { jenis: 'batal_jual', ref: teks_(f.o.no), user: s.user.username, catatan: alasan, antrian: antrian }); kembali += qty;
+    });
+  }
+  tulisMutasi_(antrian);
+  const sh = tabBaru_('transaksi'), k = KOLOM_BARU.transaksi;
+  sh.getRange(f.baris, k.indexOf('status') + 1).setValue('batal');
+  sh.getRange(f.baris, k.indexOf('batal_oleh') + 1, 1, 3).setValues([[s.user.username, waktu_(), alasan]]);
+  audit_(s.user, 'transaksi_batal', teks_(f.o.no), 'Rp' + (Number(f.o.tagihan) || 0) + ', ' + kembali + ' unit dikembalikan' + (hilang ? ', ' + hilang + ' produk sudah dihapus' : '') + ': ' + alasan);
+  f.o.status = 'batal'; f.o.batal_oleh = s.user.username; f.o.batal_alasan = alasan;
+  const out = hasilTrx_(f.o, false); out.dikembalikan = kembali; return out;
+}
+
+function ringkasHariIni_(user) {
+  const hari = waktu_().slice(0, 10);
+  const list = trxPadaTanggal_(hari).filter((x) => user.peran !== 'kasir' || teks_(x.o.kasir) === user.username);
+  let jumlah = 0, total = 0, batal = 0;
+  list.forEach((x) => { if (teks_(x.o.status) === 'batal') batal++; else { jumlah++; total += Number(x.o.tagihan) || 0; } });
+  return { jumlah: jumlah, total: total, batal: batal };
+}
+
+/* =====================================================================
+ * MODUL 5: KEUANGAN (pengeluaran, pemasukan lain, laporan laba, tutup kas)
+ * Penjualan & HPP dihitung dari tab Transaksi/ItemTransaksi (harga modal disalin saat transaksi).
+ * Laba bersih = penjualan - HPP + pemasukan lain - pengeluaran OPERASIONAL.
+ * "Pembayaran ke supplier" bukan beban operasional (modalnya sudah masuk HPP), tetapi ikut hitungan kas laci.
+ * ===================================================================== */
+const KAT_KEU = {
+  pengeluaran: {
+    listrik_air: ['Listrik & air', true], sewa: ['Sewa tempat', true], gaji: ['Gaji & upah', true], transport: ['Transportasi & bensin', true],
+    perlengkapan: ['Kemasan & perlengkapan', true], perawatan: ['Perawatan & perbaikan', true], pajak: ['Pajak & retribusi', true], lain: ['Lain-lain', true],
+    bayar_supplier: ['Pembayaran ke supplier', false]   // false = bukan beban operasional
+  },
+  pemasukan: { jasa: ['Jasa & komisi (pulsa, token, dll.)', true], lain: ['Pemasukan lain', true] }
+};
+const TGL_OK = /^\d{4}-\d{2}-\d{2}$/;
+const tglValid_ = (s) => { if (!TGL_OK.test(s)) return false; const d = new Date(s + 'T00:00:00Z'); return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; };
+const hariIni_ = () => waktu_().slice(0, 10);
+const selisihHari_ = (a, b) => Math.round((new Date(b + 'T00:00:00Z').getTime() - new Date(a + 'T00:00:00Z').getTime()) / 86400000);
+const bulatNum_ = (v) => Number(v) || 0;
+
+function setelBaru_(k, baris, nama, nilai) {   // tulis satu sel; kolom teks diformat teks dulu
+  const c = tabBaru_(k).getRange(baris, KOLOM_BARU[k].indexOf(nama) + 1);
+  if (KOLOM_TEKS_BARU[k].indexOf(nama) >= 0) c.setNumberFormat('@');
+  c.setValue(nilai);
+}
+function entriKeu_(o) {
+  return { id: teks_(o.id), tanggal: teks_(o.tanggal), jenis: teks_(o.jenis), kategori: teks_(o.kategori), jumlah: bulatNum_(o.jumlah), metode: teks_(o.metode), keterangan: teks_(o.keterangan),
+    oleh: teks_(o.oleh), waktu: teks_(o.waktu), status: teks_(o.status), diubah_oleh: teks_(o.diubah_oleh), diubah_waktu: teks_(o.diubah_waktu), batal_alasan: teks_(o.batal_alasan) };
+}
+const labelKat_ = (jenis, kat) => (KAT_KEU[jenis] && KAT_KEU[jenis][kat] ? KAT_KEU[jenis][kat][0] : kat);
+
+/* ---------- Pengeluaran & pemasukan lain ---------- */
+function aksiKeuanganCatat_(s, p) {
+  const d = p.entri || {};
+  const jenis = teks_(d.jenis); if (!KAT_KEU[jenis]) return gal_('jenis_tidak_valid');
+  const kategori = teks_(d.kategori); if (!KAT_KEU[jenis][kategori]) return gal_('kategori_tidak_valid');
+  const tanggal = teks_(d.tanggal);
+  if (!tglValid_(tanggal) || tanggal > hariIni_() || selisihHari_(tanggal, hariIni_()) > 731) return gal_('tanggal_tidak_valid');
+  const jumlah = bulat_(d.jumlah, 1, 1000000000); if (jumlah === null) return gal_('jumlah_tidak_valid');
+  const metode = teks_(d.metode); if (METODE_BAYAR.indexOf(metode) < 0) return gal_('metode_tidak_valid');
+  const ket = teks_(d.keterangan).slice(0, 120);
+  if (kategori === 'lain' && ket.length < 3) return gal_('keterangan_wajib');
+  if (!d.id) {
+    const n = tabBaru_('keuangan').getLastRow() + 1;
+    const id = 'K' + ('000000' + (n - 1)).slice(-6);
+    tambahBarisBaru_('keuangan', [[id, tanggal, jenis, kategori, jumlah, metode, ket, s.user.username, waktu_(), 'aktif', '', '', '']]);
+    audit_(s.user, 'keuangan_catat', id + ' ' + labelKat_(jenis, kategori), jenis + ' Rp' + jumlah + ' tgl ' + tanggal + (ket ? ': ' + ket : ''));
+    return aksiKeuanganDaftar_(s, { dari: tanggal, sampai: tanggal, id: id });
+  }
+  const t = bacaBaru_('keuangan');
+  const r = t.baris.filter((x) => teks_(x.id) === teks_(d.id))[0];
+  if (!r) return gal_('entri_tidak_ada');
+  if (teks_(r.status) !== 'aktif') return gal_('sudah_dibatalkan');
+  if (teks_(r.jenis) !== jenis) return gal_('jenis_tidak_valid');   // jenis tidak boleh berubah; batalkan dan buat baru
+  const baru = { tanggal: tanggal, kategori: kategori, jumlah: jumlah, metode: metode, keterangan: ket };
+  const ubah = selisih_(r, baru, Object.keys(baru));
+  if (ubah.length) {
+    Object.keys(baru).forEach((k) => { if (String(r[k]) !== String(baru[k])) setelBaru_('keuangan', r._baris, k, baru[k]); });
+    setelBaru_('keuangan', r._baris, 'diubah_oleh', s.user.username); setelBaru_('keuangan', r._baris, 'diubah_waktu', waktu_());
+    audit_(s.user, 'keuangan_ubah', teks_(r.id) + ' ' + labelKat_(jenis, kategori), ubah.join('; '));
+  }
+  return aksiKeuanganDaftar_(s, { dari: tanggal, sampai: tanggal, id: teks_(r.id) });
+}
+
+function aksiKeuanganBatal_(s, p) {
+  const alasan = teks_(p.alasan).slice(0, 120);
+  if (alasan.length < 3) return gal_('catatan_wajib');
+  const t = bacaBaru_('keuangan');
+  const r = t.baris.filter((x) => teks_(x.id) === teks_(p.id))[0];
+  if (!r) return gal_('entri_tidak_ada');
+  if (teks_(r.status) !== 'aktif') return gal_('sudah_dibatalkan');
+  setelBaru_('keuangan', r._baris, 'status', 'batal'); setelBaru_('keuangan', r._baris, 'batal_alasan', alasan);
+  setelBaru_('keuangan', r._baris, 'diubah_oleh', s.user.username); setelBaru_('keuangan', r._baris, 'diubah_waktu', waktu_());
+  audit_(s.user, 'keuangan_batal', teks_(r.id) + ' ' + labelKat_(teks_(r.jenis), teks_(r.kategori)), 'Rp' + bulatNum_(r.jumlah) + ' tgl ' + teks_(r.tanggal) + ': ' + alasan);
+  return aksiKeuanganDaftar_(s, { dari: teks_(r.tanggal), sampai: teks_(r.tanggal), id: teks_(r.id) });
+}
+
+function rentangAman_(p, bawaDari) {   // kembalikan {dari, sampai} tervalidasi, atau {galat}
+  const hari = hariIni_();
+  const sampai = teks_(p.sampai) === '' ? hari : teks_(p.sampai);
+  const dari = teks_(p.dari) === '' ? bawaDari : teks_(p.dari);
+  if (!tglValid_(dari) || !tglValid_(sampai) || dari > sampai) return { galat: 'rentang_tidak_valid' };
+  if (selisihHari_(dari, sampai) > 366) return { galat: 'rentang_terlalu_panjang' };
+  return { dari: dari, sampai: sampai };
+}
+
+function aksiKeuanganDaftar_(s, p) {
+  const rg = rentangAman_(p, hariIni_().slice(0, 8) + '01'); if (rg.galat) return gal_(rg.galat);
+  const jenis = teks_(p.jenis);
+  const t = bacaBaru_('keuangan');
+  let list = t.baris.filter((r) => teks_(r.tanggal) >= rg.dari && teks_(r.tanggal) <= rg.sampai && (!jenis || teks_(r.jenis) === jenis)).map((r) => entriKeu_(r));
+  list.sort((a, b) => (a.tanggal === b.tanggal ? (a.id < b.id ? 1 : -1) : (a.tanggal < b.tanggal ? 1 : -1)));
+  list = list.slice(0, 500);
+  const aktif = list.filter((x) => x.status === 'aktif');
+  const jml = (j) => aktif.filter((x) => x.jenis === j).reduce((a, x) => a + x.jumlah, 0);
+  return { ok: true, dari: rg.dari, sampai: rg.sampai, entri: list, kategori: KAT_KEU, id: p.id || '', total: { pemasukan: jml('pemasukan'), pengeluaran: jml('pengeluaran') } };
+}
+
+/* ---------- Pembacaan data untuk laporan (blok baris berurutan menurut waktu) ---------- */
+function blokTanggal_(sh, kolTanggal, panjangTanggal, dari, sampai, batasBaris) {   // cari blok baris [a..z] yang tanggalnya dalam rentang
+  const akhir = sh.getLastRow(); if (akhir < 2) return null;
+  const awal = Math.max(2, akhir - batasBaris + 1);
+  const nilai = sh.getRange(awal, kolTanggal, akhir - awal + 1, 1).getValues();
+  let a = -1, z = -1;
+  for (let i = 0; i < nilai.length; i++) {
+    const t = teks_(nilai[i][0]).slice(0, panjangTanggal);
+    if (t > sampai) break;
+    if (t >= dari) { if (a < 0) a = i; z = i; }
+  }
+  return a < 0 ? null : { awal: awal + a, n: z - a + 1 };
+}
+function trxDalamRentang_(dari, sampai) {
+  const sh = tabBaru_('transaksi'), kol = KOLOM_BARU.transaksi;
+  const b = blokTanggal_(sh, kol.indexOf('tanggal') + 1, 10, dari, sampai, 200000); if (!b) return [];
+  return sh.getRange(b.awal, 1, b.n, kol.length).getValues().map((r) => barisKeObj_('transaksi', r)).filter((o) => teks_(o.tanggal) >= dari && teks_(o.tanggal) <= sampai);
+}
+function itemPerTrx_(list) {
+  const peta = {}; const ada = list.filter((o) => bulatNum_(o.item_n) > 0 && bulatNum_(o.item_awal) > 0);
+  if (!ada.length) return peta;
+  const awal = Math.min.apply(null, ada.map((o) => bulatNum_(o.item_awal)));
+  const akhir = Math.max.apply(null, ada.map((o) => bulatNum_(o.item_awal) + bulatNum_(o.item_n) - 1));
+  tabBaru_('itemtransaksi').getRange(awal, 1, akhir - awal + 1, KOLOM_BARU.itemtransaksi.length).getValues().forEach((r) => {
+    const x = barisKeObj_('itemtransaksi', r), no = teks_(x.no); if (!no) return;
+    (peta[no] = peta[no] || []).push({ qty: bulatNum_(x.qty), harga_beli: bulatNum_(x.harga_beli), subtotal: bulatNum_(x.subtotal) });
+  });
+  return peta;
+}
+function mutasiDalamRentang_(dari, sampai) {
+  const sh = tabBaru_('mutasi'), kol = KOLOM_BARU.mutasi;
+  const b = blokTanggal_(sh, kol.indexOf('waktu') + 1, 10, dari, sampai, 20000); if (!b) return [];
+  return sh.getRange(b.awal, 1, b.n, kol.length).getValues().map((r) => barisKeObj_('mutasi', r)).filter((o) => teks_(o.waktu).slice(0, 10) >= dari && teks_(o.waktu).slice(0, 10) <= sampai);
+}
+
+/* ---------- Laporan keuangan ---------- */
+function hitungLaporan_(dari, sampai) {
+  const trx = trxDalamRentang_(dari, sampai), item = itemPerTrx_(trx);
+  const hari = {}; const h = (t) => hari[t] || (hari[t] = { tanggal: t, transaksi: 0, omzet: 0, hpp: 0, diskon: 0, pemasukan_lain: 0, pengeluaran_operasional: 0, bayar_supplier: 0 });
+  const metode = { tunai: 0, qris: 0, transfer: 0 }; const batal = { jumlah: 0, total: 0 }; let tidakTuntas = 0;
+  trx.forEach((o) => {
+    const st = teks_(o.status);
+    if (st === 'batal') { batal.jumlah++; batal.total += bulatNum_(o.tagihan); return; }
+    if (st !== 'selesai') { tidakTuntas++; return; }
+    const d = h(teks_(o.tanggal));
+    d.transaksi++; d.omzet += bulatNum_(o.tagihan); d.diskon += bulatNum_(o.diskon_item) + bulatNum_(o.diskon_trx);
+    if (o.metode in metode) metode[teks_(o.metode)] += bulatNum_(o.tagihan);
+    (item[teks_(o.no)] || []).forEach((it) => { d.hpp += it.qty * it.harga_beli; });
+  });
+  const katP = {}, katM = {};
+  bacaBaru_('keuangan').baris.forEach((r) => {
+    const tgl = teks_(r.tanggal); if (tgl < dari || tgl > sampai || teks_(r.status) !== 'aktif') return;
+    const jml = bulatNum_(r.jumlah), kat = teks_(r.kategori), d = h(tgl);
+    if (teks_(r.jenis) === 'pemasukan') { d.pemasukan_lain += jml; katM[kat] = (katM[kat] || 0) + jml; }
+    else { katP[kat] = (katP[kat] || 0) + jml; if (KAT_KEU.pengeluaran[kat] && KAT_KEU.pengeluaran[kat][1]) d.pengeluaran_operasional += jml; else d.bayar_supplier += jml; }
+  });
+  const harian = Object.keys(hari).sort().map((t) => { const d = hari[t]; d.laba_kotor = d.omzet - d.hpp; d.laba_bersih = d.laba_kotor + d.pemasukan_lain - d.pengeluaran_operasional; return d; });
+  const sum = (k) => harian.reduce((a, d) => a + d[k], 0);
+  const ringkas = { transaksi: sum('transaksi'), omzet: sum('omzet'), hpp: sum('hpp'), laba_kotor: sum('laba_kotor'), diskon: sum('diskon'), pemasukan_lain: sum('pemasukan_lain'),
+    pengeluaran_operasional: sum('pengeluaran_operasional'), bayar_supplier: sum('bayar_supplier'), laba_bersih: sum('laba_bersih') };
+  ringkas.margin = ringkas.omzet > 0 ? Math.round(ringkas.laba_kotor * 1000 / ringkas.omzet) / 10 : null;
+  const daftarKat = (peta, jenis) => Object.keys(peta).map((k) => ({ kategori: k, label: labelKat_(jenis, k), jumlah: peta[k], operasional: jenis === 'pemasukan' ? true : !!(KAT_KEU.pengeluaran[k] && KAT_KEU.pengeluaran[k][1]) })).sort((a, b) => b.jumlah - a.jumlah);
+  const mut = mutasiDalamRentang_(dari, sampai); const refMasuk = {}, refWa = {}; let nilaiMasuk = 0, unitMasuk = 0, unitWa = 0;
+  mut.forEach((m) => {
+    const j = teks_(m.jenis), jml = bulatNum_(m.jumlah);
+    if (j === 'masuk') { nilaiMasuk += jml * bulatNum_(m.harga_beli); unitMasuk += jml; refMasuk[teks_(m.ref)] = 1; }
+    else if (j === 'penjualan' && teks_(m.user) === 'toko-online') { unitWa += -jml; refWa[teks_(m.ref)] = 1; }
+  });
+  return { ringkas: ringkas, metode: metode, batal: batal, tidak_tuntas: tidakTuntas, pengeluaran_kategori: daftarKat(katP, 'pengeluaran'), pemasukan_kategori: daftarKat(katM, 'pemasukan'),
+    pembelian_stok: { nilai: nilaiMasuk, penerimaan: Object.keys(refMasuk).length, unit: unitMasuk }, wa: { pesanan: Object.keys(refWa).length, unit: unitWa }, harian: harian };
+}
+function aksiLaporanKeuangan_(s, p) {
+  const rg = rentangAman_(p, hariIni_().slice(0, 8) + '01'); if (rg.galat) return gal_(rg.galat);
+  const out = hitungLaporan_(rg.dari, rg.sampai); out.ok = true; out.dari = rg.dari; out.sampai = rg.sampai; return out;
+}
+
+/* ---------- Tutup kas harian ---------- */
+function komponenKas_(tanggal) {
+  const penjualan = trxPadaTanggal_(tanggal).filter((x) => teks_(x.o.status) === 'selesai' && teks_(x.o.metode) === 'tunai').reduce((a, x) => a + bulatNum_(x.o.tagihan), 0);
+  let pemasukan = 0, pengeluaran = 0;
+  bacaBaru_('keuangan').baris.forEach((r) => {
+    if (teks_(r.tanggal) !== tanggal || teks_(r.status) !== 'aktif' || teks_(r.metode) !== 'tunai') return;
+    if (teks_(r.jenis) === 'pemasukan') pemasukan += bulatNum_(r.jumlah); else pengeluaran += bulatNum_(r.jumlah);
+  });
+  return { penjualan_tunai: penjualan, pemasukan_tunai: pemasukan, pengeluaran_tunai: pengeluaran };
+}
+function tutupObj_(r) {
+  return { id: teks_(r.id), tanggal: teks_(r.tanggal), waktu: teks_(r.waktu), oleh: teks_(r.oleh), modal_awal: bulatNum_(r.modal_awal), penjualan_tunai: bulatNum_(r.penjualan_tunai),
+    pemasukan_tunai: bulatNum_(r.pemasukan_tunai), pengeluaran_tunai: bulatNum_(r.pengeluaran_tunai), kas_seharusnya: bulatNum_(r.kas_seharusnya), kas_hitung: bulatNum_(r.kas_hitung),
+    selisih: bulatNum_(r.selisih), catatan: teks_(r.catatan) };
+}
+function aksiKasHitung_(s, p) {
+  const tanggal = teks_(p.tanggal) === '' ? hariIni_() : teks_(p.tanggal);
+  if (!tglValid_(tanggal) || tanggal > hariIni_()) return gal_('tanggal_tidak_valid');
+  const t = bacaBaru_('tutupkas');
+  const ada = t.baris.filter((r) => teks_(r.tanggal) === tanggal)[0];
+  const sebelum = t.baris.filter((r) => teks_(r.tanggal) < tanggal).sort((a, b) => (teks_(a.tanggal) < teks_(b.tanggal) ? 1 : -1))[0];
+  const k = komponenKas_(tanggal);
+  const out = { ok: true, tanggal: tanggal, komponen: k, modal_awal_usulan: sebelum ? bulatNum_(sebelum.kas_hitung) : 0, tutup: null, berubah: false };
+  if (ada) {
+    out.tutup = tutupObj_(ada);
+    out.berubah = out.tutup.penjualan_tunai !== k.penjualan_tunai || out.tutup.pemasukan_tunai !== k.pemasukan_tunai || out.tutup.pengeluaran_tunai !== k.pengeluaran_tunai;   // angka berubah sejak ditutup (mis. transaksi dibatalkan/entri diubah)
+  }
+  return out;
+}
+function aksiKasTutup_(s, p) {
+  const tanggal = teks_(p.tanggal);
+  if (!tglValid_(tanggal) || tanggal > hariIni_()) return gal_('tanggal_tidak_valid');
+  const modal = bulat_(p.modal_awal, 0, 1000000000), hitung = bulat_(p.kas_hitung, 0, 1000000000);
+  if (modal === null) return gal_('modal_awal_tidak_valid');
+  if (hitung === null) return gal_('kas_hitung_tidak_valid');
+  const k = komponenKas_(tanggal);
+  const seharusnya = modal + k.penjualan_tunai + k.pemasukan_tunai - k.pengeluaran_tunai, selisihKas = hitung - seharusnya;
+  const catatan = teks_(p.catatan).slice(0, 150);
+  if (selisihKas !== 0 && catatan.length < 3) return { ok: false, galat: 'catatan_selisih_wajib', selisih: selisihKas };
+  const t = bacaBaru_('tutupkas');
+  const ada = t.baris.filter((r) => teks_(r.tanggal) === tanggal)[0];
+  const nilai = { waktu: waktu_(), oleh: s.user.username, modal_awal: modal, penjualan_tunai: k.penjualan_tunai, pemasukan_tunai: k.pemasukan_tunai, pengeluaran_tunai: k.pengeluaran_tunai,
+    kas_seharusnya: seharusnya, kas_hitung: hitung, selisih: selisihKas, catatan: catatan };
+  if (ada) {
+    const lama = tutupObj_(ada);
+    Object.keys(nilai).forEach((c) => setelBaru_('tutupkas', ada._baris, c, nilai[c]));
+    audit_(s.user, 'kas_tutup_ulang', tanggal, 'dihitung ' + lama.kas_hitung + ' -> ' + hitung + ', selisih ' + lama.selisih + ' -> ' + selisihKas);
+  } else {
+    const n = tabBaru_('tutupkas').getLastRow() + 1;
+    tambahBarisBaru_('tutupkas', [['T' + ('000000' + (n - 1)).slice(-6), tanggal, nilai.waktu, nilai.oleh, modal, k.penjualan_tunai, k.pemasukan_tunai, k.pengeluaran_tunai, seharusnya, hitung, selisihKas, catatan]]);
+    audit_(s.user, 'kas_tutup', tanggal, 'seharusnya ' + seharusnya + ', dihitung ' + hitung + ', selisih ' + selisihKas);
+  }
+  return aksiKasHitung_(s, { tanggal: tanggal });
+}
+function aksiKasRiwayat_(s, p) {
+  const batas = Math.min(Math.max(angka_(p.limit) || 30, 1), 200);
+  const list = bacaBaru_('tutupkas').baris.map(tutupObj_).sort((a, b) => (a.tanggal < b.tanggal ? 1 : -1)).slice(0, batas);
+  return { ok: true, riwayat: list };
 }

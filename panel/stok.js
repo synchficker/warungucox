@@ -4,9 +4,9 @@ const ST = { tab: 'stok', f: 'semua', q: '', riwayat: null, rf: 'semua', rq: '' 
 const JENIS = {
   stok_awal: ['Stok awal', 'package-plus'], masuk: ['Barang masuk', 'package-plus'], temuan: ['Ditemukan', 'search-check'], opname: ['Hitung ulang', 'clipboard-check'],
   rusak: ['Rusak', 'package-x'], kadaluarsa: ['Kadaluarsa', 'calendar-x'], hilang: ['Hilang', 'circle-help'], pakai_sendiri: ['Dipakai sendiri', 'hand'],
-  retur_supplier: ['Retur ke supplier', 'undo-2'], penjualan: ['Penjualan', 'shopping-cart'], koreksi_kelola: ['Koreksi (menu Kelola)', 'pencil']
+  retur_supplier: ['Retur ke supplier', 'undo-2'], penjualan: ['Penjualan', 'shopping-cart'], batal_jual: ['Pembatalan penjualan', 'undo-2'], koreksi_kelola: ['Koreksi (menu Kelola)', 'pencil']
 };
-const KELOMPOK = { masuk: ['stok_awal', 'masuk'], sesuai: ['temuan', 'opname', 'rusak', 'kadaluarsa', 'hilang', 'pakai_sendiri', 'retur_supplier', 'koreksi_kelola'], jual: ['penjualan'] };
+const KELOMPOK = { masuk: ['stok_awal', 'masuk'], sesuai: ['temuan', 'opname', 'rusak', 'kadaluarsa', 'hilang', 'pakai_sendiri', 'retur_supplier', 'koreksi_kelola'], jual: ['penjualan', 'batal_jual'] };
 const nilaiStok = () => M.produk.reduce((a, p) => a + p.stok * p.harga_beli, 0);
 const kotakRingkas = (label, nilai, ikon, kelas = 'bg-white', kecil = false) => `
   <div class="min-w-0 rounded-2xl p-3 shadow-[0_1px_3px_rgba(16,24,40,.08)] ring-1 ring-stone-900/5 ${kelas}">

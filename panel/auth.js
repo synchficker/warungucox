@@ -8,7 +8,7 @@ function terapkanSesi(r) {
 function keluarLokal(pesan) {
   S.token = ''; S.pengguna = null; S.izin = []; S.renderId++;
   simpanToken('');
-  tutupModal(); $('toast').classList.add('hidden');
+  tutupModal(); $('toast').classList.add('hidden'); if (typeof kosongPosMemori === 'function') kosongPosMemori();
   if (location.hash) history.replaceState(null, '', location.pathname);
   tampilLogin(pesan);
 }
