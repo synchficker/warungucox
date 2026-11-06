@@ -37,7 +37,7 @@ cek('LAPORAN hari 1 = hitungan manual (omzet 63.000, HPP 42.000, laba bersih 18.
   const r = kirim(tAdmin, 'laporan_keuangan', { dari: TGL.d1, sampai: TGL.d1 }); assert(r.ok, r.galat);
   // omzet = 33.000 + 30.000 (T3 batal tidak dihitung); HPP = (2x10.000 + 1x2.000) + (10x2.000) = 42.000; laba kotor 21.000
   // laba bersih = 21.000 + pemasukan 2.000 - operasional 5.000 = 18.000 (bayar supplier 20.000 BUKAN beban)
-  assert.deepEqual(r.ringkas, { transaksi: 2, omzet: 63000, hpp: 42000, laba_kotor: 21000, diskon: 0, pemasukan_lain: 2000, pengeluaran_operasional: 5000, bayar_supplier: 20000, laba_bersih: 18000, margin: 33.3 });
+  assert.deepEqual(r.ringkas, { transaksi: 2, omzet: 63000, hpp: 42000, laba_kotor: 21000, diskon: 0, pemasukan_lain: 2000, pengeluaran_operasional: 5000, bayar_supplier: 20000, susut_stok: 0, laba_bersih: 18000, margin: 33.3 });
   assert.deepEqual(r.metode, { tunai: 33000, qris: 30000, transfer: 0 }); assert.deepEqual(r.batal, { jumlah: 1, total: 14000 }); assert.equal(r.tidak_tuntas, 0);
   assert.deepEqual(r.pembelian_stok, { nilai: 95000, penerimaan: 1, unit: 10 }); assert.equal(r.harian.length, 1); assert.equal(r.harian[0].laba_bersih, 18000);
   assert.deepEqual(r.pengeluaran_kategori.map((x) => [x.kategori, x.jumlah, x.operasional]), [['bayar_supplier', 20000, false], ['listrik_air', 5000, true]]);
@@ -155,4 +155,77 @@ cek('Audit keuangan lengkap', () => {
 cek('Format teks terpasang untuk sel keuangan baru (tanggal tidak berubah jadi Date)', () => {
   const baris = sheets.Keuangan.data.length; assert.equal(sheets.Keuangan.fmt[baris + ',2'], '@'); assert.equal(sheets.Keuangan.fmt[baris + ',5'], undefined, 'jumlah tetap angka');
 });
+
+console.log('Susut stok dalam laba (hari 3)');
+{
+  const stokB = () => kirim(tOwner, 'master_ambil').produk.find((x) => x.id === B).stok;
+  const sesuai = (jenis, jumlah, catatan = '') => kirim(tAdmin, 'stok_sesuaikan', { produk_id: B, jenis, jumlah, catatan });
+  const s0 = stokB();   // B: 100 - 1 (T1) - 10 (T2) = 89
+  cek('siapkan penyesuaian B (modal Rp2.000): rusak 4, temuan 1, pakai sendiri 2, retur 1, opname -2, opname +1', () => {
+    assert.equal(s0, 89);
+    assert(sesuai('rusak', 4).ok); assert(sesuai('temuan', 1, 'ketemu di rak').ok); assert(sesuai('pakai_sendiri', 2).ok); assert(sesuai('retur_supplier', 1).ok);   // 89 -4 +1 -2 -1 = 83
+    assert(sesuai('opname', 81, 'hitung ulang').ok); assert(sesuai('opname', 82, 'hitung ulang lagi').ok); assert.equal(stokB(), 82);
+  });
+  cek('SUSUT: kerugian (4 + 2) x 2.000 = 12.000; pemulihan (1 + 1) x 2.000 = 4.000; bersih 8.000; pribadi 4.000; retur 2.000 (tidak mengurangi laba)', () => {
+    const r = kirim(tAdmin, 'laporan_keuangan', { dari: TGL.d1, sampai: TGL.d3 });
+    assert.deepEqual([r.susut.kerugian, r.susut.pemulihan, r.susut.bersih, r.susut.pribadi, r.susut.retur, r.susut.estimasi], [12000, 4000, 8000, 4000, 2000, 0]);
+    assert.equal(r.ringkas.susut_stok, 8000);
+    // Keadaan saat ini (setelah uji sebelumnya): penjualan hari 2 sudah dibatalkan; listrik Rp6.000.
+    // laba kotor 63.000 - 42.000 = 21.000; + pemasukan 2.000; - operasional (6.000 + 1.000 + 7.000 + 3.000 = 17.000); - susut 8.000 = -2.000
+    assert.equal(r.ringkas.pengeluaran_operasional, 17000); assert.equal(r.ringkas.laba_bersih, 21000 + 2000 - 17000 - 8000);
+    assert.deepEqual(r.harian.map((d) => [d.tanggal, d.susut, d.laba_bersih]), [[TGL.d1, 0, 16000], [TGL.d2, 0, -7000], [TGL.d3, 8000, -3000 - 8000]], 'susut dibebankan pada hari kejadian');
+    assert.equal(r.harian.reduce((a, d) => a + d.laba_bersih, 0), r.ringkas.laba_bersih, 'jumlah harian = total');
+    assert.deepEqual(r.susut.per_jenis, { rusak: 4 * 2000, temuan: -1 * 2000, opname: 2 * 2000 - 1 * 2000 });   // opname -2 = kerugian 4.000, opname +1 = pemulihan 2.000
+  });
+  cek('baris lama tanpa modal tersimpan dinilai dengan modal produk sekarang dan ditandai estimasi', () => {
+    const i = sheets.Mutasi.data.findIndex((r) => r[4] === 'rusak' && r[2] === B); sheets.Mutasi.data[i][8] = '';
+    assert(kirim(tOwner, 'produk_simpan', { produk: { id: B, nama: 'Produk B', kategori: 'beras', satuan: 'pcs', harga_beli: 2500, harga_jual: 3000 } }).ok);
+    const r = kirim(tAdmin, 'laporan_keuangan', { dari: TGL.d1, sampai: TGL.d3 });
+    assert.equal(r.susut.estimasi, 1); assert.equal(r.susut.kerugian, 4 * 2500 + 2 * 2000); assert.equal(r.susut.bersih, 4 * 2500 + 2 * 2000 - 2 * 2000);
+    sheets.Mutasi.data[i][8] = 2000;
+  });
+}
+
+console.log('Pesanan WhatsApp (hari 3)');
+{
+  const stokDi = (id) => kirim(tOwner, 'master_ambil').produk.find((x) => x.id === id).stok;
+  post({ kunci: 'KunciRahasia123', ops: [{ opId: 'wa-77', aksi: 'jual', item: [{ id: B, qty: 3 }, { id: A, qty: 1 }] }] });   // pesanan baru; "wa-1" sudah ada dari hari 2 (A x2)
+  cek('daftar pesanan WA: terbaru dulu, memuat barang & perkiraan nilai; hanya Admin/Owner', () => {
+    const r = kirim(tAdmin, 'wa_pesanan_daftar'); assert(r.ok); assert.deepEqual(r.pesanan.map((x) => x.ref), ['wa-77', 'wa-1']);
+    assert.equal(r.pesanan[1].items[0].qty, 2); assert.equal(r.pesanan[1].perkiraan, 2 * 15000); assert.equal(r.pesanan[0].perkiraan, 3 * 3000 + 15000);
+    assert.equal(kirim(tKasir, 'wa_pesanan_daftar').galat, 'tidak_berhak'); assert.equal(kirim(tKasir, 'wa_pesanan_batal', { ref: 'wa-1', alasan: 'abc' }).galat, 'tidak_berhak');
+    assert.equal(kirim(tAdmin, 'pos_produk').wa_menunggu, 2); assert.equal(kirim(tKasir, 'pos_produk').wa_menunggu, null);
+  });
+  let stokA0, stokB0, trWa;
+  cek('mencatat pesanan WA sebagai penjualan: stok TIDAK berkurang lagi, nilai dari harga Sheet', () => {
+    stokA0 = stokDi(A); stokB0 = stokDi(B); const nMut = sheets.Mutasi.data.length;
+    assert.equal(trx(tKasir, { wa_ref: 'wa-1', bayar: 99999 }).galat, 'tidak_berhak', 'Kasir tidak boleh');
+    assert.equal(trx(tAdmin, { wa_ref: 'tidak-ada', bayar: 99999 }).galat, 'pesanan_wa_tidak_ada');
+    trWa = trx(tAdmin, { wa_ref: 'wa-1', items: [{ produk_id: B, qty: 999 }], bayar: 40000 });   // items dari browser DIABAIKAN
+    assert(trWa.ok, trWa.galat); assert.equal(trWa.trx.total, 30000); assert.equal(trWa.trx.sumber, 'wa'); assert.equal(trWa.trx.ref_wa, 'wa-1'); assert.equal(trWa.trx.kembali, 10000); assert.equal(trWa.items.length, 1);
+    assert.equal(stokDi(A), stokA0); assert.equal(stokDi(B), stokB0); assert.equal(sheets.Mutasi.data.length, nMut, 'tidak ada mutasi stok baru');
+    assert.deepEqual(kirim(tAdmin, 'wa_pesanan_daftar').pesanan.map((x) => x.ref), ['wa-77'], 'pesanan yang sudah dicatat hilang dari daftar');
+    assert.equal(trx(tAdmin, { wa_ref: 'wa-1', bayar: 99999 }).galat, 'pesanan_wa_tidak_ada', 'tidak bisa dicatat dua kali');
+  });
+  cek('laporan: penjualan WA masuk omzet & ditandai; HPP dari modal saat dicatat', () => {
+    const r = kirim(tAdmin, 'laporan_keuangan', { dari: TGL.d3, sampai: TGL.d3 });
+    assert.deepEqual(r.wa_dicatat, { transaksi: 1, omzet: 30000 }); assert.equal(r.ringkas.omzet, 30000); assert.equal(r.ringkas.hpp, 2 * 10000); assert.equal(r.wa_menunggu, 1);
+  });
+  cek('membatalkan transaksi WA: pesanan kembali ke daftar, stok TIDAK diubah (sudah dikurangi pesanan aslinya)', () => {
+    const b = kirim(tAdmin, 'transaksi_batal', { no: trWa.trx.no, alasan: 'pelanggan tidak jadi ambil' }); assert(b.ok, b.galat); assert.equal(b.dikembalikan, 0);
+    assert.equal(stokDi(A), stokA0); assert.deepEqual(kirim(tAdmin, 'wa_pesanan_daftar').pesanan.map((x) => x.ref).sort(), ['wa-1', 'wa-77']);
+  });
+  cek('membatalkan pesanan WA: stok dikembalikan penuh, hilang dari daftar, tercatat', () => {
+    const a0 = stokDi(A), b0 = stokDi(B);
+    assert.equal(kirim(tAdmin, 'wa_pesanan_batal', { ref: 'wa-77', alasan: 'x' }).galat, 'catatan_wajib'); assert.equal(kirim(tAdmin, 'wa_pesanan_batal', { ref: 'wa-404', alasan: 'tidak ada' }).galat, 'pesanan_wa_tidak_ada');
+    const r = kirim(tAdmin, 'wa_pesanan_batal', { ref: 'wa-77', alasan: 'pelanggan membatalkan' }); assert(r.ok, r.galat); assert.equal(r.dikembalikan, 4);
+    assert.equal(stokDi(A), a0 + 1); assert.equal(stokDi(B), b0 + 3); assert.deepEqual(r.pesanan.map((x) => x.ref), ['wa-1']);
+    assert.equal(kirim(tAdmin, 'wa_pesanan_batal', { ref: 'wa-77', alasan: 'lagi' }).galat, 'pesanan_wa_tidak_ada', 'tidak bisa dibatalkan dua kali');
+    const m = sheets.Mutasi.data.filter((x) => x[4] === 'batal_jual' && x[10] === 'wa-77'); assert.equal(m.length, 2); assert(m.every((x) => /^Pesanan WA/.test(x[11]) && x[5] > 0));
+    assert(kirim(tOwner, 'audit_daftar', { limit: 100 }).audit.some((x) => x.aksi === 'wa_batal'));
+  });
+  cek('pesanan WA dengan diskon per barang oleh Admin', () => {
+    const r = trx(tAdmin, { wa_ref: 'wa-1', diskon_item: { [A]: 1000 }, bayar: 29000 }); assert(r.ok, r.galat); assert.equal(r.trx.diskon_item, 1000); assert.equal(r.trx.total, 29000);
+  });
+}
 console.log(`\n${ok} pengujian keuangan lolos${process.exitCode ? ' (ADA YANG GAGAL)' : ''}`);

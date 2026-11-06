@@ -1,14 +1,17 @@
 /* Warung Ucox | panel/pos.js | Point of Sale: produk, keranjang, diskon, pembayaran, struk, riwayat transaksi */
 
 const P = { produk: [], kategori: [], cfg: { diskon_maks_kasir: 10, jual_stok_kurang: false, pembulatan: 0 }, toko: {}, q: '', kat: 'semua',
-  cart: [], dt: { jenis: 'persen', nilai: 0 }, catatan: '', idKlien: '', metode: 'tunai', bayar: '', modal: '', tgl: '', terakhir: null };
+  cart: [], dt: { jenis: 'persen', nilai: 0 }, catatan: '', idKlien: '', metode: 'tunai', bayar: '', modal: '', tgl: '', terakhir: null,
+  waRef: '', waMenunggu: null, waDaftar: [] };
 const angkaPos = (v) => Number(String(v ?? '').replace(/\D/g, '')) || 0;
 const produkPos = (id) => P.produk.find((p) => p.id === id);
 const kasirSaja = () => S.pengguna.peran === 'kasir';
 
 /* ---------- Keranjang tersimpan di perangkat (draf saja; transaksi sebenarnya disimpan di Google Sheets) ---------- */
 const KEY_KRJ = () => 'ucox_keranjang_' + (S.pengguna ? S.pengguna.id : 'x');
-function simpanKrj() { try { localStorage.setItem(KEY_KRJ(), JSON.stringify({ cart: P.cart, dt: P.dt, catatan: P.catatan })); } catch (e) { /* diblokir */ } }
+function simpanKrj() {
+  if (P.waRef) { try { localStorage.removeItem(KEY_KRJ()); } catch (e) { /* diblokir */ } return; }   // keranjang pesanan WhatsApp TIDAK boleh dipulihkan sebagai keranjang biasa (stok akan berkurang dua kali)
+  try { localStorage.setItem(KEY_KRJ(), JSON.stringify({ cart: P.cart, dt: P.dt, catatan: P.catatan })); } catch (e) { /* diblokir */ } }
 function muatKrj() {
   try {
     const j = JSON.parse(localStorage.getItem(KEY_KRJ()) || 'null');
@@ -18,10 +21,10 @@ function muatKrj() {
     P.catatan = String(j.catatan || '').slice(0, 100);
   } catch (e) { /* draf rusak: abaikan */ }
 }
-function kosongkanKrj() { P.cart = []; P.dt = { jenis: 'persen', nilai: 0 }; P.catatan = ''; P.idKlien = ''; P.bayar = ''; simpanKrj(); }
+function kosongkanKrj() { P.waRef = ''; P.cart = []; P.dt = { jenis: 'persen', nilai: 0 }; P.catatan = ''; P.idKlien = ''; P.bayar = ''; simpanKrj(); }
 const ubahKrj = () => { P.idKlien = ''; simpanKrj(); };   // isi keranjang berubah = permintaan baru (kunci anti-ganda diganti)
 
-function kosongPosMemori() { P.produk = []; P.cart = []; P.dt = { jenis: 'persen', nilai: 0 }; P.catatan = ''; P.idKlien = ''; P.bayar = ''; P.q = ''; P.kat = 'semua'; P.modal = ''; P.struk = null; P.terakhir = null; }   // dipanggil saat keluar: tak ada keranjang yang terbawa ke pengguna berikutnya
+function kosongPosMemori() { P.waRef = ''; P.waMenunggu = null; P.waDaftar = []; P.produk = []; P.cart = []; P.dt = { jenis: 'persen', nilai: 0 }; P.catatan = ''; P.idKlien = ''; P.bayar = ''; P.q = ''; P.kat = 'semua'; P.modal = ''; P.struk = null; P.terakhir = null; }   // dipanggil saat keluar: tak ada keranjang yang terbawa ke pengguna berikutnya
 
 /* ---------- Hitungan uang: SAMA PERSIS dengan hitungTrx_() di Code.gs ---------- */
 function hitungPos(metode = 'tunai') {
@@ -38,7 +41,7 @@ const melebihiBatas = (h) => kasirSaja() && h.kotor > 0 && (h.dItem + h.dTrx) * 
 /* ---------- Memuat data ---------- */
 async function muatProdukPos() {
   const r = await api('pos_produk');
-  P.produk = r.produk; P.kategori = r.kategori; P.cfg = r.cfg; P.toko = r.toko;
+  P.produk = r.produk; P.kategori = r.kategori; P.cfg = r.cfg; P.toko = r.toko; P.waMenunggu = r.wa_menunggu;
   P.cart = P.cart.filter((c) => produkPos(c.id));   // produk yang dihapus pemilik hilang dari keranjang
 }
 VIEW.pos = {
@@ -91,6 +94,7 @@ function kerangkaPos() {
             <input id="cari-pos" type="search" autocomplete="off" value="${esc(P.q)}" placeholder="Cari atau pindai barcode" class="h-12 w-full rounded-full border border-stone-200 bg-white pl-12 pr-4 text-base"></div>
           ${bisaScan() ? `<button type="button" data-aksi="pos-scan" aria-label="Pindai dengan kamera" class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-biru text-white">${ic('scan-barcode', 'w-5 h-5')}</button>` : ''}
           <button type="button" data-aksi="pos-riwayat" aria-label="Riwayat transaksi" title="Riwayat transaksi" class="grid h-12 w-12 shrink-0 place-items-center rounded-full border border-stone-200 bg-white text-stone-600">${ic('history', 'w-5 h-5')}</button>
+          ${P.waMenunggu !== null ? `<button type="button" data-aksi="pos-wa" aria-label="Pesanan WhatsApp" title="Pesanan WhatsApp" class="relative grid h-12 w-12 shrink-0 place-items-center rounded-full border border-stone-200 bg-white text-stone-600">${ic('message-circle', 'w-5 h-5')}${P.waMenunggu > 0 ? `<span data-lencana-wa class="absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-tomat px-1 text-[10px] font-extrabold text-white">${P.waMenunggu}</span>` : ''}</button>` : ''}
         </div>
         <div id="wrap-pos" class="mt-3">${isiProdukPos()}</div>
       </section>
@@ -108,11 +112,11 @@ function barisKrj(c) {
       <span class="min-w-0"><span class="block truncate text-sm font-bold">${esc(p.nama)}</span><span class="block text-xs text-stone-500">${rp(p.harga_jual)} / ${esc(p.satuan)}</span></span>
       <span class="shrink-0 text-sm font-extrabold" data-sub="${esc(c.id)}">${rp(bruto - Math.min(c.diskon, bruto))}</span></div>
     <div class="mt-2 flex items-center gap-1.5">
-      <button type="button" data-aksi="pos-minus" data-id="${esc(c.id)}" aria-label="Kurangi ${esc(p.nama)}" class="grid h-9 w-9 place-items-center rounded-full bg-stone-100 text-stone-700">${ic('minus', 'w-4 h-4')}</button>
+      ${P.waRef ? `<span class="text-sm font-bold text-stone-600">Jumlah: ${c.qty} ${esc(p.satuan)}</span>` : `<button type="button" data-aksi="pos-minus" data-id="${esc(c.id)}" aria-label="Kurangi ${esc(p.nama)}" class="grid h-9 w-9 place-items-center rounded-full bg-stone-100 text-stone-700">${ic('minus', 'w-4 h-4')}</button>
       <input data-pos="qty" data-id="${esc(c.id)}" inputmode="numeric" maxlength="5" value="${c.qty}" aria-label="Jumlah ${esc(p.nama)}" class="h-9 w-14 rounded-lg border border-stone-200 text-center text-base font-bold">
-      <button type="button" data-aksi="pos-plus" data-id="${esc(c.id)}" aria-label="Tambah ${esc(p.nama)}" class="grid h-9 w-9 place-items-center rounded-full bg-stone-100 text-stone-700">${ic('plus', 'w-4 h-4')}</button>
+      <button type="button" data-aksi="pos-plus" data-id="${esc(c.id)}" aria-label="Tambah ${esc(p.nama)}" class="grid h-9 w-9 place-items-center rounded-full bg-stone-100 text-stone-700">${ic('plus', 'w-4 h-4')}</button>`}
       <button type="button" data-aksi="pos-diskon-item" data-id="${esc(c.id)}" class="ml-auto inline-flex items-center gap-1 text-xs font-bold ${c.diskon > 0 ? 'text-tomat' : 'text-biru'}">${ic('tag', 'w-3.5 h-3.5')}<span data-dlabel="${esc(c.id)}">${c.diskon > 0 ? 'Diskon ' + rp(c.diskon) : 'Diskon'}</span></button>
-      <button type="button" data-aksi="pos-hapus" data-id="${esc(c.id)}" aria-label="Hapus ${esc(p.nama)}" class="grid h-8 w-8 place-items-center rounded-full text-stone-400">${ic('x', 'w-4 h-4')}</button>
+      ${P.waRef ? '' : `<button type="button" data-aksi="pos-hapus" data-id="${esc(c.id)}" aria-label="Hapus ${esc(p.nama)}" class="grid h-8 w-8 place-items-center rounded-full text-stone-400">${ic('x', 'w-4 h-4')}</button>`}
     </div>
     ${c.buka ? `<label class="mt-2 block text-xs font-semibold text-stone-500">Potongan harga untuk barang ini (Rp)
       <input data-pos="diskon-item" data-id="${esc(c.id)}" inputmode="numeric" maxlength="9" value="${c.diskon || ''}" placeholder="0" class="mt-1 w-full rounded-xl border border-stone-200 px-3 py-2 text-base font-bold"></label>` : ''}
@@ -127,7 +131,7 @@ function htmlTotalKrj(h, lebih) {
     <button type="button" data-aksi="pos-bayar" ${lebih ? 'disabled' : ''} class="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-biru py-3.5 text-lg font-extrabold text-white disabled:opacity-40">${ic('wallet', 'w-5 h-5')} Bayar</button>`;
 }
 function htmlIsiKrj(h, lebih, judul) {
-  return `<div class="flex items-center justify-between">${judul ? `<h3 class="font-display text-lg font-extrabold">Keranjang <span class="text-sm font-bold text-stone-500">(${h.jumlah})</span></h3>` : `<span class="text-sm font-bold text-stone-500">${h.jumlah} barang</span>`}
+  return `${P.waRef ? `<p class="mb-2 flex items-start gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">${ic('message-circle', 'mt-0.5 h-4 w-4 shrink-0')}<span>Pesanan WhatsApp <b>${esc(P.waRef)}</b>. Stok sudah dikurangi saat dipesan, jadi <b>tidak dikurangi lagi</b>. Jumlah barang tidak bisa diubah.</span></p>` : ''}<div class="flex items-center justify-between">${judul ? `<h3 class="font-display text-lg font-extrabold">Keranjang <span class="text-sm font-bold text-stone-500">(${h.jumlah})</span></h3>` : `<span class="text-sm font-bold text-stone-500">${h.jumlah} barang</span>`}
       <button type="button" data-aksi="pos-kosongkan" class="text-sm font-bold text-tomat">Kosongkan</button></div>
     <ul class="mt-1 divide-y divide-stone-100">${P.cart.map(barisKrj).join('')}</ul>
     <div class="mt-2 border-t border-stone-100 pt-3">
@@ -167,8 +171,14 @@ function segarTotal() {   // hitung ulang angka tanpa menggambar ulang (fokus ke
   document.querySelectorAll('[data-aksi=pos-bayar]').forEach((b) => { b.disabled = lebih; });
   const bar = $('bar-krj'); if (bar) { bar.innerHTML = barKeranjang(); icons(); }
 }
+function segarLencanaWa() {   // lencana jumlah pesanan WA di tombol atas diperbarui di tempat
+  const b = document.querySelector('[data-aksi=pos-wa]'); if (!b) return;
+  const lama = b.querySelector('[data-lencana-wa]'); if (lama) lama.remove();
+  if (P.waMenunggu > 0) { const t = document.createElement('span'); t.setAttribute('data-lencana-wa', ''); t.className = 'absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-tomat px-1 text-[10px] font-extrabold text-white'; t.textContent = P.waMenunggu; b.appendChild(t); }
+}
 function segarPos() {
   if (S.rute === 'pos') {
+    segarLencanaWa();
     const w = $('wrap-pos'); if (w) w.innerHTML = isiProdukPos();
     const a = $('panel-krj'); if (a) a.innerHTML = htmlKeranjang();
     const b = $('bar-krj'); if (b) b.innerHTML = barKeranjang();
@@ -186,6 +196,7 @@ function htmlModalKeranjang() {   // HP: daftar bisa di-scroll, total + tombol B
 /* ---------- Aksi: produk & keranjang ---------- */
 function tambahKrj(id) {
   const p = produkPos(id); if (!p) return false;
+  if (P.waRef) { toast('Selesaikan atau kosongkan pesanan WhatsApp ini dulu.', true); return false; }
   const c = P.cart.find((x) => x.id === id); const maks = P.cfg.jual_stok_kurang ? 10000 : p.stok;
   if ((c ? c.qty : 0) + 1 > maks) { toast(p.stok <= 0 ? `${p.nama} habis.` : `Stok ${p.nama} tinggal ${p.stok}.`, true); return false; }
   if (c) c.qty++; else P.cart.push({ id, qty: 1, diskon: 0, buka: false });
@@ -292,12 +303,15 @@ FORM.bayar = (form) => jalankan(form, 'Memproses...', async () => {
   const setelah = h.kotor - h.dItem; const v = angkaPos(P.dt.nilai);
   const dt = v > 0 ? { jenis: P.dt.jenis, nilai: P.dt.jenis === 'persen' ? Math.min(100, v) : Math.min(v, setelah) } : undefined;
   let r;
-  try { r = await api('transaksi_buat', { trx: { id_klien: P.idKlien, metode: P.metode, items, diskon_trx: dt, bayar: P.metode === 'tunai' ? angkaPos(P.bayar) : undefined, catatan: P.catatan.trim() } }); }
+  const muatan = { id_klien: P.idKlien, metode: P.metode, diskon_trx: dt, bayar: P.metode === 'tunai' ? angkaPos(P.bayar) : undefined, catatan: P.catatan.trim() };
+  if (P.waRef) { muatan.wa_ref = P.waRef; muatan.diskon_item = Object.fromEntries(items.filter((x) => x.diskon > 0).map((x) => [x.produk_id, x.diskon])); } else muatan.items = items;   // pesanan WA: barang diambil server dari catatan pesanan
+  try { r = await api('transaksi_buat', { trx: muatan }); }
   catch (e) { if (['stok_tidak_cukup', 'produk_tidak_ada'].includes(e.kode)) { try { await muatProdukPos(); segarPos(); } catch (x) { /* abaikan */ } } throw e; }
   if (r.stok) r.stok.forEach((s) => { const p = produkPos(s.id); if (p) p.stok = s.stok; });
   else { try { await muatProdukPos(); } catch (e) { /* stok dimuat ulang saat membuka Kasir */ } }   // jawaban "sudah tercatat" tidak memuat stok: ambil ulang
-  const ulang = r.duplikat;
+  const ulang = r.duplikat, dariWa = !!P.waRef;
   kosongkanKrj(); P.metode = 'tunai'; P.modal = ''; P.terakhir = r;
+  if (dariWa) { try { await muatProdukPos(); } catch (e) { /* lencana diperbarui saat membuka Kasir lagi */ } }   // lencana jumlah pesanan WA ikut berkurang
   segarPos(); tampilStruk(r, { baru: true });
   if (ulang) toast('Transaksi ini sudah tercatat sebelumnya, tidak dicatat dua kali.');
 });
@@ -398,4 +412,58 @@ FORM.batal = (form, d) => jalankan(form, 'Membatalkan...', async () => {
   const r = await api('transaksi_batal', { no: d.no, alasan: d.alasan.trim() });
   try { await muatProdukPos(); } catch (e) { /* stok akan dimuat ulang saat membuka Kasir */ }
   toast(`Transaksi dibatalkan. ${r.dikembalikan} barang dikembalikan ke stok.`); segarPos(); bukaRiwayat();
+});
+
+/* ---------- Pesanan WhatsApp (Admin/Owner) ---------- */
+async function bukaWa() {
+  bukaModal(kepala('Pesanan WhatsApp', 'message-circle') + `<div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">${memuatHtml.replace('py-20', 'py-10')}</div>`);
+  let r;
+  try { r = await api('wa_pesanan_daftar'); } catch (e) { bukaModal(kepala('Pesanan WhatsApp', 'message-circle') + `<div class="px-4 py-6">${kartuKosong('cloud-off', 'Belum bisa dimuat', pesanGalat(e))}</div>`); return; }
+  P.waDaftar = r.pesanan; P.waMenunggu = r.pesanan.length; if (S.rute === 'pos') segarPos();
+  bukaModal(kepala('Pesanan WhatsApp', 'message-circle') + `
+    <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <p class="rounded-xl bg-latar px-3 py-2 text-xs text-stone-600">Pesanan dari halaman toko sudah <b>mengurangi stok</b> saat dikirim. Catat sebagai <b>penjualan</b> setelah dibayar atau diambil (stok tidak dikurangi lagi), atau <b>batalkan</b> bila tidak jadi (stok dikembalikan).</p>
+      ${r.pesanan.length ? `<ul class="mt-3 divide-y divide-stone-100 rounded-2xl bg-white px-4 ring-1 ring-stone-200">${r.pesanan.map((o) => `
+        <li><button type="button" data-aksi="wa-detail" data-ref="${esc(o.ref)}" class="flex w-full items-center gap-3 py-3 text-left">
+          <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700">${ic('message-circle', 'w-5 h-5')}</span>
+          <span class="min-w-0 flex-1"><span class="block truncate text-sm font-bold">${o.items.map((i) => esc(i.produk) + ' ×' + i.qty).join(', ')}</span><span class="block text-xs text-stone-500">${esc(waktuPendek(o.waktu))} &middot; ${esc(o.ref)}</span></span>
+          <span class="shrink-0 text-sm font-extrabold">${rp(o.perkiraan)}</span></button></li>`).join('')}</ul>` : kartuKosong('message-circle', 'Tidak ada pesanan menunggu', 'Pesanan WhatsApp baru dari halaman toko akan muncul di sini.')}
+    </div>
+    <div class="px-4 pt-2" style="${kakiStyle}"><button type="button" data-aksi="tutup" class="w-full rounded-full py-2.5 text-sm font-bold text-stone-500">Tutup</button></div>`);
+}
+AKSI['pos-wa'] = () => bukaWa();
+AKSI['wa-detail'] = (el) => {
+  const o = P.waDaftar.find((x) => x.ref === el.dataset.ref); if (!o) return;
+  const lengkap = o.items.every((i) => i.ada);
+  bukaModal(kepala('Rincian pesanan', 'message-circle') + `
+    <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+      <p class="text-xs text-stone-500">${esc(waktuPendek(o.waktu))} &middot; ${esc(o.ref)}</p>
+      <ul class="divide-y divide-stone-100 rounded-2xl bg-white px-4 ring-1 ring-stone-200">${o.items.map((i) => `<li class="flex items-baseline justify-between gap-2 py-2.5 text-sm"><span class="min-w-0 truncate font-bold">${esc(i.produk)} <span class="font-normal text-stone-500">×${i.qty}</span></span><span class="shrink-0">${i.ada ? rp(i.harga * i.qty) : '<b class="text-tomat">produk dihapus</b>'}</span></li>`).join('')}
+        <li class="flex items-baseline justify-between py-2.5 font-extrabold"><span>Perkiraan (harga sekarang)</span><span>${rp(o.perkiraan)}</span></li></ul>
+      ${lengkap ? '' : '<p class="rounded-xl bg-tomat/10 px-3 py-2 text-sm font-semibold text-tomat">Ada produk yang sudah dihapus, jadi pesanan ini tidak bisa dicatat sebagai penjualan. Batalkan saja.</p>'}
+    </div>
+    <div class="space-y-2 border-t border-stone-100 px-4 pt-3" style="${kakiStyle}">
+      <button type="button" data-aksi="wa-catat" data-ref="${esc(o.ref)}" ${lengkap ? '' : 'disabled'} class="w-full rounded-full bg-biru py-3 font-extrabold text-white disabled:opacity-40">Catat sebagai penjualan</button>
+      <div class="flex gap-2"><button type="button" data-aksi="wa-batal" data-ref="${esc(o.ref)}" class="flex flex-1 items-center justify-center gap-1.5 rounded-full border border-tomat/40 py-2.5 text-sm font-bold text-tomat">${ic('undo-2', 'w-4 h-4')} Batalkan pesanan</button>
+        <button type="button" data-aksi="pos-wa" class="flex-1 rounded-full py-2.5 text-sm font-bold text-stone-500">Kembali</button></div>
+    </div>`);
+};
+AKSI['wa-catat'] = (el) => {
+  const o = P.waDaftar.find((x) => x.ref === el.dataset.ref); if (!o) return;
+  P.cart = o.items.map((i) => ({ id: i.produk_id, qty: i.qty, diskon: 0, buka: false })); P.waRef = o.ref; P.dt = { jenis: 'persen', nilai: 0 }; P.catatan = ''; P.idKlien = ''; P.bayar = ''; P.metode = 'tunai'; simpanKrj();
+  segarPos(); P.modal = 'krj'; bukaModal(htmlModalKeranjang());
+};
+AKSI['wa-batal'] = (el) => {
+  bukaModal(kepala('Batalkan pesanan WhatsApp', 'undo-2') + `
+  <form data-form="wa-batal" class="flex min-h-0 flex-1 flex-col"><div class="space-y-3 px-4 py-3">
+    <input type="hidden" name="ref" value="${esc(el.dataset.ref)}">
+    <p class="text-sm text-stone-700">Stok barang pada pesanan <b>${esc(el.dataset.ref)}</b> akan <b>dikembalikan</b> dan pesanan hilang dari daftar. Tercatat di Audit.</p>
+    ${kolom('alasan', 'Alasan', { maks: 120, min: 3, contoh: 'Contoh: pelanggan tidak jadi mengambil' })}<p data-galat role="alert" class="min-h-5 text-sm font-bold text-tomat"></p></div>
+    <div class="flex gap-2 border-t border-stone-100 px-4 pt-3" style="${kakiStyle}"><button type="button" data-aksi="pos-wa" class="rounded-full px-5 py-3 font-bold text-stone-500">Kembali</button>
+      <button type="submit" class="flex-1 rounded-full bg-tomat py-3 font-extrabold text-white disabled:opacity-40">Batalkan pesanan</button></div></form>`);
+};
+FORM['wa-batal'] = (form, d) => jalankan(form, 'Membatalkan...', async () => {
+  const r = await api('wa_pesanan_batal', { ref: d.ref, alasan: d.alasan.trim() });
+  try { await muatProdukPos(); } catch (e) { /* dimuat ulang saat membuka Kasir */ }
+  toast(`Pesanan dibatalkan. ${r.dikembalikan} barang dikembalikan ke stok.`); segarPos(); bukaWa();
 });

@@ -14,6 +14,7 @@ const LABEL_AUDIT = {
   barang_masuk: ['Barang masuk', 'package-plus', 'text-biru'], stok_sesuaikan: ['Penyesuaian stok', 'clipboard-check', 'text-amber-600'], stok_min_ubah: ['Stok minimum diubah', 'triangle-alert', 'text-biru'],
   transaksi_batal: ['Transaksi dibatalkan', 'undo-2', 'text-tomat'],
   keuangan_catat: ['Catatan kas', 'notebook-pen', 'text-biru'], keuangan_ubah: ['Catatan kas diubah', 'notebook-pen', 'text-amber-600'], keuangan_batal: ['Catatan kas dibatalkan', 'undo-2', 'text-tomat'],
+  wa_batal: ['Pesanan WhatsApp dibatalkan', 'message-circle', 'text-tomat'],
   kas_tutup: ['Tutup kas', 'vault', 'text-biru'], kas_tutup_ulang: ['Tutup kas ulang', 'vault', 'text-amber-600']
 };
 let dataAudit = []; let cariAudit = '';

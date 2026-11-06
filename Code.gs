@@ -1,6 +1,6 @@
 /**
  * Toko Sembako si Ucox | Code.gs
- * Versi: Tahap 5 (Autentikasi & Peran + Master Data + Inventaris + POS + Keuangan) - berbasis versi FINAL FIX 01 Nov 2026
+ * Versi: Tahap 6 (Autentikasi & Peran + Master Data + Inventaris + POS + Keuangan + Analitik) - berbasis versi FINAL FIX 01 Nov 2026
  * Jalur lama (halaman toko + kunci sinkron) tetap utuh. Jalur multi-user ada di bagian MODUL 1 di bawah.
  */
 
@@ -301,7 +301,7 @@ const KOLOM_BARU = {
   audit: ['waktu', 'username', 'peran', 'aksi', 'target', 'detail'],
   mutasi: ['id', 'waktu', 'produk_id', 'produk', 'jenis', 'jumlah', 'stok_sebelum', 'stok_sesudah', 'harga_beli', 'supplier_id', 'ref', 'catatan', 'user'],
   transaksi: ['no', 'waktu', 'tanggal', 'kasir', 'kasir_nama', 'jumlah_item', 'kotor', 'diskon_item', 'diskon_trx', 'total', 'pembulatan', 'tagihan', 'metode', 'bayar', 'kembali',
-    'status', 'catatan', 'id_klien', 'item_awal', 'item_n', 'batal_oleh', 'batal_waktu', 'batal_alasan'],
+    'status', 'catatan', 'id_klien', 'item_awal', 'item_n', 'batal_oleh', 'batal_waktu', 'batal_alasan', 'sumber', 'ref_wa'],
   itemtransaksi: ['no', 'produk_id', 'produk', 'satuan', 'qty', 'harga', 'diskon', 'subtotal', 'harga_beli'],
   keuangan: ['id', 'tanggal', 'jenis', 'kategori', 'jumlah', 'metode', 'keterangan', 'oleh', 'waktu', 'status', 'diubah_oleh', 'diubah_waktu', 'batal_alasan'],
   tutupkas: ['id', 'tanggal', 'waktu', 'oleh', 'modal_awal', 'penjualan_tunai', 'pemasukan_tunai', 'pengeluaran_tunai', 'kas_seharusnya', 'kas_hitung', 'selisih', 'catatan']
@@ -312,7 +312,7 @@ const KOLOM_TEKS_BARU = {
   pengaturan: ['kunci', 'nilai'],
   audit: ['waktu', 'username', 'peran', 'aksi', 'target', 'detail'],
   mutasi: ['id', 'waktu', 'produk_id', 'produk', 'jenis', 'supplier_id', 'ref', 'catatan', 'user'],
-  transaksi: ['no', 'waktu', 'tanggal', 'kasir', 'kasir_nama', 'metode', 'status', 'catatan', 'id_klien', 'batal_oleh', 'batal_waktu', 'batal_alasan'],
+  transaksi: ['no', 'waktu', 'tanggal', 'kasir', 'kasir_nama', 'metode', 'status', 'catatan', 'id_klien', 'batal_oleh', 'batal_waktu', 'batal_alasan', 'sumber', 'ref_wa'],
   itemtransaksi: ['no', 'produk_id', 'produk', 'satuan'],
   keuangan: ['id', 'tanggal', 'jenis', 'kategori', 'metode', 'keterangan', 'oleh', 'waktu', 'status', 'diubah_oleh', 'diubah_waktu', 'batal_alasan'],
   tutupkas: ['id', 'tanggal', 'waktu', 'oleh', 'catatan']
@@ -348,20 +348,34 @@ const PENGATURAN_AWAL = {
   pesan_struk: 'Terima kasih sudah belanja!',
   diskon_maks_kasir: '10',   // persen dari harga kotor; di atas ini harus Admin/Owner
   jual_stok_kurang: 'tidak',   // 'ya' = kasir boleh menjual walau stok tercatat kurang (stok dikunci 0)
-  pembulatan: '0'   // pembulatan ke atas untuk pembayaran tunai: 0, 100, 500, atau 1000
+  pembulatan: '0',   // pembulatan ke atas untuk pembayaran tunai: 0, 100, 500, atau 1000
+  lead_time_hari: '3',   // lama barang datang setelah dipesan (untuk saran restok)
+  hari_cakupan: '7'   // pesan sampai stok cukup sekian hari penjualan di atas titik pesan ulang
 };
 
 /* ---------- Tabel ---------- */
+const kolomSudahDicek_ = {};   // pemeriksaan header cukup sekali per eksekusi
 function tabBaru_(k) {
   const ss = SpreadsheetApp.getActive();
   let sh = ss.getSheetByName(TAB_BARU[k]);
+  const kol = KOLOM_BARU[k];
   if (!sh) {
     sh = ss.insertSheet(TAB_BARU[k]);
-    const kol = KOLOM_BARU[k];
     sh.getRange(1, 1, 1, kol.length).setValues([kol]).setFontWeight('bold').setBackground('#DCEBF5');
     sh.setFrozenRows(1);
     KOLOM_TEKS_BARU[k].forEach((n) => sh.getRange(1, kol.indexOf(n) + 1, sh.getMaxRows(), 1).setNumberFormat('@'));
     if (k === 'pengaturan') Object.keys(PENGATURAN_AWAL).forEach((n) => sh.appendRow([n, PENGATURAN_AWAL[n]]));
+    kolomSudahDicek_[k] = true;
+  } else if (!kolomSudahDicek_[k]) {   // Sheet dibuat oleh versi lama: tambahkan header kolom baru di ujung kanan (data lama tidak disentuh)
+    kolomSudahDicek_[k] = true;
+    if (k !== 'pengaturan') {
+      const h = sh.getRange(1, 1, 1, kol.length).getValues()[0];
+      kol.forEach((n, i) => {
+        if (teks_(h[i]) !== '') return;
+        sh.getRange(1, i + 1).setValue(n).setFontWeight('bold').setBackground('#DCEBF5');
+        if (KOLOM_TEKS_BARU[k].indexOf(n) >= 0) sh.getRange(1, i + 1, sh.getMaxRows(), 1).setNumberFormat('@');
+      });
+    }
   }
   return sh;
 }
@@ -646,6 +660,8 @@ function aksiPengaturanSimpan_(s, p) {
   baru.pesan_struk = teks_(d.pesan_struk).slice(0, 80);
   if (d.diskon_maks_kasir !== undefined) { const v = Number(d.diskon_maks_kasir); if (!Number.isInteger(v) || v < 0 || v > 100) return gal_('diskon_maks_tidak_valid'); baru.diskon_maks_kasir = String(v); }
   if (d.jual_stok_kurang !== undefined) baru.jual_stok_kurang = d.jual_stok_kurang === 'ya' ? 'ya' : 'tidak';
+  if (d.lead_time_hari !== undefined) { const v = Number(d.lead_time_hari); if (!Number.isInteger(v) || v < 1 || v > 60) return gal_('lead_time_tidak_valid'); baru.lead_time_hari = String(v); }
+  if (d.hari_cakupan !== undefined) { const v = Number(d.hari_cakupan); if (!Number.isInteger(v) || v < 1 || v > 60) return gal_('cakupan_tidak_valid'); baru.hari_cakupan = String(v); }
   if (d.pembulatan !== undefined) { const v = Number(d.pembulatan); if (PEMBULATAN_OK.indexOf(v) < 0) return gal_('pembulatan_tidak_valid'); baru.pembulatan = String(v); }
   const lama = ambilPengaturan_(true);
   const sh = tabBaru_('pengaturan');
@@ -744,11 +760,13 @@ const HANDLER_ = {
   stok_min_simpan: { izin: 'penyesuaian_stok', jalan: (s, p) => aksiStokMinSimpan_(s, p) },
   mutasi_daftar: { izin: 'barang_masuk', jalan: (s, p) => aksiMutasiDaftar_(s, p) },
   // Tahap 4: POS
-  pos_produk: { izin: 'pos', jalan: () => aksiPosProduk_() },
+  pos_produk: { izin: 'pos', jalan: (s) => aksiPosProduk_(s) },
   transaksi_buat: { izin: 'pos', jalan: (s, p) => aksiTransaksiBuat_(s, p) },
   transaksi_daftar: { izin: 'pos', jalan: (s, p) => aksiTransaksiDaftar_(s, p) },
   transaksi_detail: { izin: 'pos', jalan: (s, p) => aksiTransaksiDetail_(s, p) },
   transaksi_batal: { izin: 'laporan', jalan: (s, p) => aksiTransaksiBatal_(s, p) },
+  wa_pesanan_daftar: { izin: 'laporan', jalan: () => aksiWaDaftar_() },
+  wa_pesanan_batal: { izin: 'laporan', jalan: (s, p) => aksiWaBatal_(s, p) },
   // Tahap 5: Keuangan
   keuangan_catat: { izin: 'pengeluaran', jalan: (s, p) => aksiKeuanganCatat_(s, p) },
   keuangan_batal: { izin: 'pengeluaran', jalan: (s, p) => aksiKeuanganBatal_(s, p) },
@@ -756,7 +774,9 @@ const HANDLER_ = {
   laporan_keuangan: { izin: 'laporan', jalan: (s, p) => aksiLaporanKeuangan_(s, p) },
   kas_hitung: { izin: 'laporan', jalan: (s, p) => aksiKasHitung_(s, p) },
   kas_tutup: { izin: 'laporan', jalan: (s, p) => aksiKasTutup_(s, p) },
-  kas_riwayat: { izin: 'laporan', jalan: (s, p) => aksiKasRiwayat_(s, p) }
+  kas_riwayat: { izin: 'laporan', jalan: (s, p) => aksiKasRiwayat_(s, p) },
+  // Tahap 6: Analitik
+  analitik: { izin: 'laporan', jalan: (s, p) => aksiAnalitik_(s, p) }
 };
 
 /* ---------- Menu Google Sheets ---------- */
@@ -1108,7 +1128,7 @@ function aksiStokSesuaikan_(s, p) {
   const supplier = teks_(p.supplier);
   if (supplier && !bacaTab_('supplier').baris.some((x) => teks_(x.id) === supplier)) return gal_('supplier_tidak_ada');
   let hasil;
-  try { hasil = ubahStok_(t, r, delta, { jenis: jenis, supplier: jenis === 'retur_supplier' ? supplier : '', ref: refBaru_('PS'), catatan: catatan, user: s.user.username }); }
+  try { hasil = ubahStok_(t, r, delta, { jenis: jenis, supplier: jenis === 'retur_supplier' ? supplier : '', ref: refBaru_('PS'), catatan: catatan, user: s.user.username, harga_beli: angka_(r.harga_beli) }); }   // modal saat itu dicatat untuk menilai kerugian
   catch (err) { if (err.message === 'stok_tidak_cukup') return { ok: false, galat: 'stok_tidak_cukup', tersedia: err.tersedia }; throw err; }
   audit_(s.user, 'stok_sesuaikan', teks_(r.id) + ' ' + teks_(r.nama), JENIS_MUTASI[jenis] + ': ' + hasil.sebelum + ' -> ' + hasil.sesudah + (catatan ? ' (' + catatan + ')' : ''));
   const out = dataInventaris_(); out.sebelum = hasil.sebelum; out.sesudah = hasil.sesudah; return out;
@@ -1199,7 +1219,8 @@ function trxPublik_(o) {
   return { no: teks_(o.no), waktu: teks_(o.waktu), tanggal: teks_(o.tanggal), kasir: teks_(o.kasir), kasir_nama: teks_(o.kasir_nama), jumlah_item: n(o.jumlah_item),
     kotor: n(o.kotor), diskon_item: n(o.diskon_item), diskon_trx: n(o.diskon_trx), total: n(o.total), pembulatan: n(o.pembulatan), tagihan: n(o.tagihan),
     metode: teks_(o.metode), bayar: n(o.bayar), kembali: n(o.kembali), status: teks_(o.status), catatan: teks_(o.catatan),
-    batal_oleh: teks_(o.batal_oleh), batal_waktu: teks_(o.batal_waktu), batal_alasan: teks_(o.batal_alasan) };
+    batal_oleh: teks_(o.batal_oleh), batal_waktu: teks_(o.batal_waktu), batal_alasan: teks_(o.batal_alasan),
+    sumber: teks_(o.sumber) || 'pos', ref_wa: teks_(o.ref_wa) };
 }
 
 function trxTerakhir_(n) {
@@ -1250,9 +1271,9 @@ function noTransaksi_() {
 const bolehLihatTrx_ = (user, o) => user.peran !== 'kasir' || (teks_(o.kasir) === user.username && teks_(o.tanggal) === waktu_().slice(0, 10));
 
 /* ---------- Data untuk layar kasir (tanpa harga beli) ---------- */
-function aksiPosProduk_() {
+function aksiPosProduk_(s) {
   const d = ambilData_(false);
-  return { ok: true, kategori: d.kategori, cfg: cfgPos_(), toko: ambilPengaturan_(false),
+  return { ok: true, kategori: d.kategori, cfg: cfgPos_(), toko: ambilPengaturan_(false), wa_menunggu: IZIN.laporan.indexOf(s.user.peran) >= 0 ? daftarPesananWa_().length : null,
     produk: d.produk.map((p) => ({ id: p.id, nama: p.nama, kategori: p.kategori, satuan: p.satuan, harga_jual: p.harga_jual, stok: p.stok, gambar: p.gambar, barcode: p.barcode })) };
 }
 
@@ -1270,7 +1291,15 @@ function aksiTransaksiBuat_(s, p) {
   }
   const cfg = cfgPos_();
   const metode = teks_(d.metode); if (METODE_BAYAR.indexOf(metode) < 0) return gal_('metode_tidak_valid');
-  const items = Array.isArray(d.items) ? d.items : [];
+  let items = Array.isArray(d.items) ? d.items : [];
+  const waRef = teks_(d.wa_ref);
+  if (waRef) {   // mencatat pesanan WhatsApp yang stoknya SUDAH dikurangi saat dipesan: barang diambil dari catatan pesanan, stok tidak dikurangi lagi
+    if (s.user.peran === 'kasir') return gal_('tidak_berhak');
+    const pw = daftarPesananWa_().filter((x) => x.ref === waRef)[0];
+    if (!pw) return gal_('pesanan_wa_tidak_ada');
+    const dm = d.diskon_item && typeof d.diskon_item === 'object' ? d.diskon_item : {};
+    items = pw.items.map((it) => ({ produk_id: it.produk_id, qty: it.qty, diskon: dm[it.produk_id] === undefined ? 0 : dm[it.produk_id] }));
+  }
   if (!items.length) return gal_('keranjang_kosong');
   if (items.length > 100) return gal_('item_terlalu_banyak');
   const t = tabProduk_();
@@ -1283,7 +1312,7 @@ function aksiTransaksiBuat_(s, p) {
     sudah[teks_(r.id)] = true;
     const qty = bulat_(it.qty, 1, 10000); if (qty === null) return { ok: false, galat: 'jumlah_tidak_valid', produk_id: teks_(r.id) };
     const diskon = teks_(it.diskon) === '' ? 0 : bulat_(it.diskon, 0, 100000000); if (diskon === null) return { ok: false, galat: 'diskon_tidak_valid', produk_id: teks_(r.id) };
-    const tersedia = angka_(r.stok), kurang = Math.max(0, qty - tersedia);
+    const tersedia = angka_(r.stok), kurang = waRef ? 0 : Math.max(0, qty - tersedia);
     if (kurang && !cfg.jual_stok_kurang) return { ok: false, galat: 'stok_tidak_cukup', produk_id: teks_(r.id), tersedia: tersedia };
     lines.push({ r: r, produk_id: teks_(r.id), qty: qty, harga: angka_(r.harga_jual), diskon: diskon, kurang: kurang });
   }
@@ -1304,19 +1333,68 @@ function aksiTransaksiBuat_(s, p) {
   const jumlahItem = lines.reduce((a, l) => a + l.qty, 0);
   // 1) kepala transaksi berstatus "proses"  2) rincian  3) stok + mutasi  4) status "selesai"
   const nBaris = tambahBarisBaru_('transaksi', [[no, wkt, wkt.slice(0, 10), s.user.username, s.user.nama, jumlahItem, h.kotor, h.diskon_item, h.diskon_trx, h.total, h.pembulatan, h.tagihan,
-    metode, bayar, kembali, 'proses', catatan, idKlien, itemAwal, lines.length, '', '', '']]);
+    metode, bayar, kembali, 'proses', catatan, idKlien, itemAwal, lines.length, '', '', '', waRef ? 'wa' : 'pos', waRef]]);
   tambahBarisBaru_('itemtransaksi', lines.map((l) => [no, l.produk_id, teks_(l.r.nama), teks_(l.r.satuan), l.qty, l.harga, l.diskon, l.harga * l.qty - l.diskon, angka_(l.r.harga_beli)]));
   const antrian = [], stokBaru = [];
   lines.forEach((l) => {
-    const keluar = l.qty - l.kurang;
+    const keluar = waRef ? 0 : l.qty - l.kurang;   // pesanan WhatsApp: stok sudah dikurangi saat dipesan
     if (keluar > 0) ubahStok_(t, l.r, -keluar, { jenis: 'penjualan', ref: no, user: s.user.username, catatan: l.kurang ? 'stok kurang ' + l.kurang : '', antrian: antrian });
     stokBaru.push({ id: l.produk_id, stok: angka_(l.r.stok) });
   });
   tulisMutasi_(antrian);
   tabBaru_('transaksi').getRange(nBaris, KOLOM_BARU.transaksi.indexOf('status') + 1).setValue('selesai');
   const o = barisKeObj_('transaksi', [no, wkt, wkt.slice(0, 10), s.user.username, s.user.nama, jumlahItem, h.kotor, h.diskon_item, h.diskon_trx, h.total, h.pembulatan, h.tagihan,
-    metode, bayar, kembali, 'selesai', catatan, idKlien, itemAwal, lines.length, '', '', '']);
+    metode, bayar, kembali, 'selesai', catatan, idKlien, itemAwal, lines.length, '', '', '', waRef ? 'wa' : 'pos', waRef]);
   const out = hasilTrx_(o, false); out.stok = stokBaru; return out;
+}
+
+/* ---------- Pesanan WhatsApp dari halaman toko ----------
+ * Saat pelanggan mengirim pesanan, stok langsung dikurangi (jalur lama, petugas "toko-online").
+ * Admin/Owner kemudian: (a) mencatatnya sebagai PENJUALAN (stok tidak dikurangi lagi), atau (b) MEMBATALKANNYA (stok dikembalikan). */
+function daftarPesananWa_() {
+  const sm = tabBaru_('mutasi'), akhir = sm.getLastRow();
+  if (akhir < 2) return [];
+  const awal = Math.max(2, akhir - 19999);
+  const pesanan = {}, urut = [], batal = {};
+  sm.getRange(awal, 1, akhir - awal + 1, KOLOM_BARU.mutasi.length).getValues().forEach((r) => {
+    const m = barisKeObj_('mutasi', r), j = teks_(m.jenis), ref = teks_(m.ref);
+    if (!ref) return;
+    if (j === 'penjualan' && teks_(m.user) === 'toko-online') {
+      if (!pesanan[ref]) { pesanan[ref] = { ref: ref, waktu: teks_(m.waktu), items: [] }; urut.push(ref); }
+      const q = -(Number(m.jumlah) || 0);
+      if (q > 0) pesanan[ref].items.push({ produk_id: teks_(m.produk_id), produk: teks_(m.produk), qty: q });
+    } else if (j === 'batal_jual' && teks_(m.catatan).indexOf('Pesanan WA') === 0) batal[ref] = 1;
+  });
+  const st = tabBaru_('transaksi'), a2 = st.getLastRow(), dicatat = {};
+  if (a2 > 1) {
+    const aw = Math.max(2, a2 - 19999), n = a2 - aw + 1, kol = KOLOM_BARU.transaksi;
+    const refs = st.getRange(aw, kol.indexOf('ref_wa') + 1, n, 1).getValues(), stat = st.getRange(aw, kol.indexOf('status') + 1, n, 1).getValues();
+    refs.forEach((x, i) => { if (teks_(x[0]) && teks_(stat[i][0]) !== 'batal') dicatat[teks_(x[0])] = 1; });   // transaksi yang dibatalkan melepas pesanannya kembali
+  }
+  return urut.filter((ref) => !batal[ref] && !dicatat[ref] && pesanan[ref].items.length).map((ref) => pesanan[ref]).reverse();
+}
+function aksiWaDaftar_() {
+  const peta = {}; bacaTab_('produk').baris.forEach((r) => { peta[teks_(r.id)] = r; });
+  const daftar = daftarPesananWa_().map((p) => {
+    const items = p.items.map((i) => { const r = peta[i.produk_id]; return { produk_id: i.produk_id, produk: i.produk, qty: i.qty, satuan: r ? teks_(r.satuan) : '', harga: r ? angka_(r.harga_jual) : 0, ada: !!r }; });
+    return { ref: p.ref, waktu: p.waktu, items: items, perkiraan: items.reduce((a, i) => a + i.qty * i.harga, 0) };
+  });
+  return { ok: true, pesanan: daftar };
+}
+function aksiWaBatal_(s, p) {
+  const alasan = teks_(p.alasan).slice(0, 120);
+  if (alasan.length < 3) return gal_('catatan_wajib');
+  const pw = daftarPesananWa_().filter((x) => x.ref === teks_(p.ref))[0];
+  if (!pw) return gal_('pesanan_wa_tidak_ada');
+  const t = tabProduk_(); const idx = {}; t.baris.forEach((r) => { idx[teks_(r.id)] = r; });
+  const antrian = []; let kembali = 0, hilang = 0;
+  pw.items.forEach((i) => {
+    const r = idx[i.produk_id]; if (!r) { hilang++; return; }
+    ubahStok_(t, r, i.qty, { jenis: 'batal_jual', ref: pw.ref, user: s.user.username, catatan: 'Pesanan WA dibatalkan: ' + alasan, antrian: antrian }); kembali += i.qty;
+  });
+  tulisMutasi_(antrian);
+  audit_(s.user, 'wa_batal', pw.ref, kembali + ' unit dikembalikan' + (hilang ? ', ' + hilang + ' produk sudah dihapus' : '') + ': ' + alasan);
+  const out = aksiWaDaftar_(); out.dikembalikan = kembali; return out;
 }
 
 /* ---------- Riwayat & rincian ---------- */
@@ -1495,7 +1573,7 @@ function itemPerTrx_(list) {
   const akhir = Math.max.apply(null, ada.map((o) => bulatNum_(o.item_awal) + bulatNum_(o.item_n) - 1));
   tabBaru_('itemtransaksi').getRange(awal, 1, akhir - awal + 1, KOLOM_BARU.itemtransaksi.length).getValues().forEach((r) => {
     const x = barisKeObj_('itemtransaksi', r), no = teks_(x.no); if (!no) return;
-    (peta[no] = peta[no] || []).push({ qty: bulatNum_(x.qty), harga_beli: bulatNum_(x.harga_beli), subtotal: bulatNum_(x.subtotal) });
+    (peta[no] = peta[no] || []).push({ produk_id: teks_(x.produk_id), produk: teks_(x.produk), satuan: teks_(x.satuan), qty: bulatNum_(x.qty), harga_beli: bulatNum_(x.harga_beli), subtotal: bulatNum_(x.subtotal) });
   });
   return peta;
 }
@@ -1505,17 +1583,44 @@ function mutasiDalamRentang_(dari, sampai) {
   return sh.getRange(b.awal, 1, b.n, kol.length).getValues().map((r) => barisKeObj_('mutasi', r)).filter((o) => teks_(o.waktu).slice(0, 10) >= dari && teks_(o.waktu).slice(0, 10) <= sampai);
 }
 
+/* ---------- Susut stok (shrinkage) ----------
+ * KERUGIAN : rusak, kadaluarsa, hilang, dan opname yang kurang dari catatan  -> mengurangi laba
+ * PEMULIHAN: barang ditemukan, dan opname yang lebih dari catatan            -> menambah laba (mengoreksi kerugian)
+ * BUKAN kerugian usaha (hanya informasi): "dipakai sendiri" (pengambilan pemilik) dan "retur ke supplier" (dikembalikan ke pemasok).
+ * Nilai = jumlah x harga modal SAAT penyesuaian. Baris lama tanpa modal tersimpan dinilai dengan modal produk sekarang (ditandai estimasi). */
+function hitungSusut_(mut) {
+  let peta = null;
+  const modalSkrg = (id) => { if (!peta) { peta = {}; bacaTab_('produk').baris.forEach((r) => { peta[teks_(r.id)] = angka_(r.harga_beli); }); } return peta[id] || 0; };
+  const out = { kerugian: 0, pemulihan: 0, bersih: 0, pribadi: 0, retur: 0, estimasi: 0, per_hari: {}, per_jenis: {} };
+  mut.forEach((m) => {
+    const j = teks_(m.jenis), jml = Number(m.jumlah) || 0; if (!jml) return;
+    if (['rusak', 'kadaluarsa', 'hilang', 'opname', 'temuan', 'pakai_sendiri', 'retur_supplier'].indexOf(j) < 0) return;
+    let modal = teks_(m.harga_beli) === '' ? null : Number(m.harga_beli);
+    if (modal === null) { modal = modalSkrg(teks_(m.produk_id)); out.estimasi++; }
+    const nilai = Math.abs(jml) * modal, tgl = teks_(m.waktu).slice(0, 10);
+    if (j === 'pakai_sendiri') { out.pribadi += nilai; return; }
+    if (j === 'retur_supplier') { out.retur += nilai; return; }
+    const efek = (j === 'temuan' || (j === 'opname' && jml > 0)) ? -nilai : nilai;   // + kerugian, - pemulihan
+    if (efek > 0) out.kerugian += efek; else out.pemulihan += -efek;
+    out.per_hari[tgl] = (out.per_hari[tgl] || 0) + efek;
+    out.per_jenis[j] = (out.per_jenis[j] || 0) + efek;
+  });
+  out.bersih = out.kerugian - out.pemulihan;
+  return out;
+}
+
 /* ---------- Laporan keuangan ---------- */
 function hitungLaporan_(dari, sampai) {
   const trx = trxDalamRentang_(dari, sampai), item = itemPerTrx_(trx);
-  const hari = {}; const h = (t) => hari[t] || (hari[t] = { tanggal: t, transaksi: 0, omzet: 0, hpp: 0, diskon: 0, pemasukan_lain: 0, pengeluaran_operasional: 0, bayar_supplier: 0 });
-  const metode = { tunai: 0, qris: 0, transfer: 0 }; const batal = { jumlah: 0, total: 0 }; let tidakTuntas = 0;
+  const hari = {}; const h = (t) => hari[t] || (hari[t] = { tanggal: t, transaksi: 0, omzet: 0, hpp: 0, diskon: 0, pemasukan_lain: 0, pengeluaran_operasional: 0, bayar_supplier: 0, susut: 0 });
+  const metode = { tunai: 0, qris: 0, transfer: 0 }; const batal = { jumlah: 0, total: 0 }; let tidakTuntas = 0; const waDicatat = { transaksi: 0, omzet: 0 };
   trx.forEach((o) => {
     const st = teks_(o.status);
     if (st === 'batal') { batal.jumlah++; batal.total += bulatNum_(o.tagihan); return; }
     if (st !== 'selesai') { tidakTuntas++; return; }
     const d = h(teks_(o.tanggal));
     d.transaksi++; d.omzet += bulatNum_(o.tagihan); d.diskon += bulatNum_(o.diskon_item) + bulatNum_(o.diskon_trx);
+    if (teks_(o.sumber) === 'wa') { waDicatat.transaksi++; waDicatat.omzet += bulatNum_(o.tagihan); }
     if (o.metode in metode) metode[teks_(o.metode)] += bulatNum_(o.tagihan);
     (item[teks_(o.no)] || []).forEach((it) => { d.hpp += it.qty * it.harga_beli; });
   });
@@ -1526,20 +1631,23 @@ function hitungLaporan_(dari, sampai) {
     if (teks_(r.jenis) === 'pemasukan') { d.pemasukan_lain += jml; katM[kat] = (katM[kat] || 0) + jml; }
     else { katP[kat] = (katP[kat] || 0) + jml; if (KAT_KEU.pengeluaran[kat] && KAT_KEU.pengeluaran[kat][1]) d.pengeluaran_operasional += jml; else d.bayar_supplier += jml; }
   });
-  const harian = Object.keys(hari).sort().map((t) => { const d = hari[t]; d.laba_kotor = d.omzet - d.hpp; d.laba_bersih = d.laba_kotor + d.pemasukan_lain - d.pengeluaran_operasional; return d; });
+  const mut = mutasiDalamRentang_(dari, sampai), susut = hitungSusut_(mut);
+  Object.keys(susut.per_hari).forEach((t) => { h(t).susut += susut.per_hari[t]; });
+  const harian = Object.keys(hari).sort().map((t) => { const d = hari[t]; d.laba_kotor = d.omzet - d.hpp; d.laba_bersih = d.laba_kotor + d.pemasukan_lain - d.pengeluaran_operasional - d.susut; return d; });
   const sum = (k) => harian.reduce((a, d) => a + d[k], 0);
   const ringkas = { transaksi: sum('transaksi'), omzet: sum('omzet'), hpp: sum('hpp'), laba_kotor: sum('laba_kotor'), diskon: sum('diskon'), pemasukan_lain: sum('pemasukan_lain'),
-    pengeluaran_operasional: sum('pengeluaran_operasional'), bayar_supplier: sum('bayar_supplier'), laba_bersih: sum('laba_bersih') };
+    pengeluaran_operasional: sum('pengeluaran_operasional'), bayar_supplier: sum('bayar_supplier'), susut_stok: sum('susut'), laba_bersih: sum('laba_bersih') };
   ringkas.margin = ringkas.omzet > 0 ? Math.round(ringkas.laba_kotor * 1000 / ringkas.omzet) / 10 : null;
   const daftarKat = (peta, jenis) => Object.keys(peta).map((k) => ({ kategori: k, label: labelKat_(jenis, k), jumlah: peta[k], operasional: jenis === 'pemasukan' ? true : !!(KAT_KEU.pengeluaran[k] && KAT_KEU.pengeluaran[k][1]) })).sort((a, b) => b.jumlah - a.jumlah);
-  const mut = mutasiDalamRentang_(dari, sampai); const refMasuk = {}, refWa = {}; let nilaiMasuk = 0, unitMasuk = 0, unitWa = 0;
+  const refMasuk = {}, refWa = {}; let nilaiMasuk = 0, unitMasuk = 0, unitWa = 0;
   mut.forEach((m) => {
     const j = teks_(m.jenis), jml = bulatNum_(m.jumlah);
     if (j === 'masuk') { nilaiMasuk += jml * bulatNum_(m.harga_beli); unitMasuk += jml; refMasuk[teks_(m.ref)] = 1; }
     else if (j === 'penjualan' && teks_(m.user) === 'toko-online') { unitWa += -jml; refWa[teks_(m.ref)] = 1; }
   });
   return { ringkas: ringkas, metode: metode, batal: batal, tidak_tuntas: tidakTuntas, pengeluaran_kategori: daftarKat(katP, 'pengeluaran'), pemasukan_kategori: daftarKat(katM, 'pemasukan'),
-    pembelian_stok: { nilai: nilaiMasuk, penerimaan: Object.keys(refMasuk).length, unit: unitMasuk }, wa: { pesanan: Object.keys(refWa).length, unit: unitWa }, harian: harian };
+    pembelian_stok: { nilai: nilaiMasuk, penerimaan: Object.keys(refMasuk).length, unit: unitMasuk }, wa: { pesanan: Object.keys(refWa).length, unit: unitWa },
+    wa_dicatat: waDicatat, wa_menunggu: daftarPesananWa_().length, susut: { kerugian: susut.kerugian, pemulihan: susut.pemulihan, bersih: susut.bersih, pribadi: susut.pribadi, retur: susut.retur, estimasi: susut.estimasi, per_jenis: susut.per_jenis }, harian: harian };
 }
 function aksiLaporanKeuangan_(s, p) {
   const rg = rentangAman_(p, hariIni_().slice(0, 8) + '01'); if (rg.galat) return gal_(rg.galat);
@@ -1604,4 +1712,182 @@ function aksiKasRiwayat_(s, p) {
   const batas = Math.min(Math.max(angka_(p.limit) || 30, 1), 200);
   const list = bacaBaru_('tutupkas').baris.map(tutupObj_).sort((a, b) => (a.tanggal < b.tanggal ? 1 : -1)).slice(0, batas);
   return { ok: true, riwayat: list };
+}
+
+/* =====================================================================
+ * MODUL 6: ANALITIK (omzet, tren, produk terlaris, ABC, persediaan, titik impas, saran restok)
+ * Setiap angka dihitung dari data transaksi nyata. Rumus:
+ *  - Kecepatan jual d  = total terjual / hari efektif (hari kalender, termasuk hari tanpa penjualan)
+ *  - Simpangan baku s  = sqrt( (sum(x^2) - n*d^2) / (n-1) )   (x = jumlah terjual per hari, n = hari efektif)
+ *  - Titik pesan ulang = d*L + z*s*sqrt(L)      (L = lead time hari, z = 1,65 untuk tingkat layanan 95%)
+ *  - Stok target       = titik pesan ulang + d*R (R = hari cakupan); saran beli = ceil(stok target - stok)  bila stok <= titik pesan ulang
+ *  - ABC (Pareto) berdasarkan omzet bersih produk: A = hingga 80% kumulatif, B = hingga 95%, C = sisanya
+ *  - Titik impas harian = (pengeluaran operasional / hari) / (laba kotor / omzet)
+ *  - Perputaran persediaan = harga pokok periode / nilai persediaan sekarang; hari persediaan = nilai persediaan / harga pokok per hari
+ * ===================================================================== */
+const Z_LAYANAN = 1.65;
+const ANALITIK_MAKS_HARI = 92;
+const NAMA_HARI = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+const geserTgl_ = (t, n) => { const d = new Date(t + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const desimal_ = (v, n) => { const f = Math.pow(10, n); return Math.round(v * f) / f; };
+const persenUbah_ = (now, prev) => (prev > 0 ? desimal_((now - prev) * 100 / prev, 1) : null);
+const hariDalamRentang_ = (dari, sampai) => { const a = []; for (let t = dari; t <= sampai; t = geserTgl_(t, 1)) a.push(t); return a; };
+
+function awalProduk_() {   // tanggal PEMBUATAN produk (mutasi stok_awal pertama). Produk tanpa catatan itu dianggap lama.
+  const sh = tabBaru_('mutasi'), akhir = sh.getLastRow(), peta = {};
+  if (akhir < 2) return peta;
+  const awal = Math.max(2, akhir - 19999), n = akhir - awal + 1, kol = KOLOM_BARU.mutasi;
+  const id = sh.getRange(awal, kol.indexOf('produk_id') + 1, n, 1).getValues(), jn = sh.getRange(awal, kol.indexOf('jenis') + 1, n, 1).getValues(), wk = sh.getRange(awal, kol.indexOf('waktu') + 1, n, 1).getValues();
+  const lihat = {};
+  for (let i = 0; i < n; i++) { const p = teks_(id[i][0]); if (!p || lihat[p]) continue; lihat[p] = 1; if (teks_(jn[i][0]) === 'stok_awal') peta[p] = teks_(wk[i][0]).slice(0, 10); }
+  return peta;
+}
+function ringkasPeriode_(dari, sampai) {
+  const trx = trxDalamRentang_(dari, sampai), item = itemPerTrx_(trx);
+  let omzet = 0, n = 0, hpp = 0;
+  trx.forEach((o) => { if (teks_(o.status) !== 'selesai') return; n++; omzet += bulatNum_(o.tagihan); (item[teks_(o.no)] || []).forEach((i) => { hpp += i.qty * i.harga_beli; }); });
+  return { omzet: omzet, transaksi: n, laba_kotor: omzet - hpp };
+}
+
+function hitungAnalitik_(dari, sampai) {
+  const hariN = selisihHari_(dari, sampai) + 1;
+  const pg = ambilPengaturan_(false), lead = Math.max(1, Number(pg.lead_time_hari) || 3), cakupan = Math.max(1, Number(pg.hari_cakupan) || 7);
+  const tgls = hariDalamRentang_(dari, sampai);
+  const trx = trxDalamRentang_(dari, sampai), item = itemPerTrx_(trx);
+  const hari = {}; tgls.forEach((t) => { hari[t] = { tanggal: t, transaksi: 0, omzet: 0, hpp: 0, laba_kotor: 0 }; });
+  const jam = []; for (let i = 0; i < 24; i++) jam.push({ jam: i, transaksi: 0, omzet: 0 });
+  const dow = NAMA_HARI.map((n) => ({ nama: n, transaksi: 0, omzet: 0, hari: 0 }));
+  const idxDow = (t) => (new Date(t + 'T12:00:00Z').getUTCDay() + 6) % 7;
+  tgls.forEach((t) => { dow[idxDow(t)].hari++; });
+  const produk = {}, kasir = {};
+  let omzet = 0, hppTot = 0, nTrx = 0, kotorTot = 0, diskonTot = 0, qtyTot = 0, batalN = 0;
+  trx.forEach((o) => {
+    const kn = teks_(o.kasir), k = kasir[kn] || (kasir[kn] = { username: kn, nama: teks_(o.kasir_nama) || kn, transaksi: 0, omzet: 0, kotor: 0, diskon: 0, batal: 0 });
+    const st = teks_(o.status);
+    if (st === 'batal') { k.batal++; batalN++; return; }
+    if (st !== 'selesai') return;
+    const tgl = teks_(o.tanggal), tagihan = bulatNum_(o.tagihan), dTrx = bulatNum_(o.diskon_trx), dItem = bulatNum_(o.diskon_item), kotor = bulatNum_(o.kotor);
+    const its = item[teks_(o.no)] || [], sumSub = its.reduce((a, i) => a + i.subtotal, 0);
+    let hppT = 0, qtyT = 0;
+    its.forEach((i) => {
+      const net = i.subtotal - (sumSub > 0 ? dTrx * i.subtotal / sumSub : 0);   // diskon transaksi dibagi ke barang menurut porsi nilainya
+      hppT += i.qty * i.harga_beli; qtyT += i.qty;
+      const p = produk[i.produk_id] || (produk[i.produk_id] = { id: i.produk_id, nama: i.produk, satuan: i.satuan, qty: 0, omzet: 0, hpp: 0, harian: {} });
+      p.qty += i.qty; p.omzet += net; p.hpp += i.qty * i.harga_beli; p.harian[tgl] = (p.harian[tgl] || 0) + i.qty;
+    });
+    const d = hari[tgl]; d.transaksi++; d.omzet += tagihan; d.hpp += hppT; d.laba_kotor = d.omzet - d.hpp;
+    const jm = parseInt(teks_(o.waktu).slice(11, 13), 10); if (jm >= 0 && jm < 24) { jam[jm].transaksi++; jam[jm].omzet += tagihan; }
+    const w = dow[idxDow(tgl)]; w.transaksi++; w.omzet += tagihan;
+    k.transaksi++; k.omzet += tagihan; k.kotor += kotor; k.diskon += dItem + dTrx;
+    nTrx++; omzet += tagihan; hppTot += hppT; kotorTot += kotor; diskonTot += dItem + dTrx; qtyTot += qtyT;
+  });
+  const labaKotor = omzet - hppTot, aov = nTrx ? omzet / nTrx : 0;
+  const hariAktif = tgls.filter((t) => hari[t].transaksi > 0).length;
+
+  // ----- produk: kecepatan jual, simpangan baku, titik pesan ulang
+  const dataProd = ambilData_(true).produk, pm = {}; dataProd.forEach((p) => { pm[p.id] = p; });
+  const awal = awalProduk_();
+  const daftar = Object.keys(produk).map((id) => {
+    const p = produk[id], now = pm[id] || null, tglJual = Object.keys(p.harian).sort();
+    let mulai = awal[id] && awal[id] > dari ? awal[id] : dari; if (tglJual.length && tglJual[0] < mulai) mulai = tglJual[0];
+    const n = Math.max(1, selisihHari_(mulai, sampai) + 1);
+    const rata = p.qty / n; let sumsq = 0; Object.keys(p.harian).forEach((t) => { sumsq += p.harian[t] * p.harian[t]; });
+    const sd = n > 1 ? Math.sqrt(Math.max(0, (sumsq - n * rata * rata) / (n - 1))) : 0;
+    const rop = rata * lead + Z_LAYANAN * sd * Math.sqrt(lead), target = rop + rata * cakupan;
+    const stok = now ? now.stok : null;
+    const perlu = stok !== null && stok <= rop;
+    const saran = perlu ? Math.max(0, Math.ceil(target - stok)) : 0;
+    const laba = p.omzet - p.hpp;
+    return { id: id, nama: p.nama, satuan: p.satuan, qty: p.qty, omzet: Math.round(p.omzet), hpp: p.hpp, laba: Math.round(laba), margin: p.omzet > 0 ? desimal_(laba * 100 / p.omzet, 1) : null,
+      hari_efektif: n, rata_harian: desimal_(rata, 2), sd_harian: desimal_(sd, 2), stok: stok, hari_stok: stok !== null && rata > 0 ? desimal_(stok / rata, 1) : null,
+      rop: desimal_(rop, 1), target: desimal_(target, 1), perlu_restok: perlu, saran_qty: saran, biaya_saran: now ? saran * now.harga_beli : 0, data_cukup: n >= 7, _omzet: p.omzet };
+  });
+  // ----- ABC / Pareto menurut omzet bersih produk
+  const urutOmzet = daftar.slice().sort((a, b) => b._omzet - a._omzet), totalOmzetProduk = urutOmzet.reduce((a, p) => a + p._omzet, 0);
+  let kum = 0; const abc = { A: { produk: 0, omzet: 0 }, B: { produk: 0, omzet: 0 }, C: { produk: 0, omzet: 0 } }, kelas = {};
+  urutOmzet.forEach((p) => {
+    const sebelum = totalOmzetProduk > 0 ? kum / totalOmzetProduk : 0, k = sebelum < 0.8 ? 'A' : (sebelum < 0.95 ? 'B' : 'C');
+    kum += p._omzet; kelas[p.id] = { kelas: k, kumulatif: totalOmzetProduk > 0 ? desimal_(kum * 100 / totalOmzetProduk, 1) : 0 };
+    abc[k].produk++; abc[k].omzet += p._omzet;
+  });
+  ['A', 'B', 'C'].forEach((k) => { abc[k].omzet = Math.round(abc[k].omzet); abc[k].persen = totalOmzetProduk > 0 ? desimal_(abc[k].omzet * 100 / totalOmzetProduk, 1) : 0; });
+  daftar.forEach((p) => { p.kelas = kelas[p.id].kelas; p.kumulatif = kelas[p.id].kumulatif; delete p._omzet; });
+  const terlarisQty = daftar.slice().sort((a, b) => b.qty - a.qty || b.omzet - a.omzet).slice(0, 10);
+  const terlarisLaba = daftar.slice().sort((a, b) => b.laba - a.laba).slice(0, 10);
+  const restok = daftar.filter((p) => p.perlu_restok).sort((a, b) => (a.hari_stok === null ? 1e9 : a.hari_stok) - (b.hari_stok === null ? 1e9 : b.hari_stok)).slice(0, 20);
+  // ----- stok mati (ada stok, tidak terjual di periode, bukan produk baru)
+  const mati = dataProd.filter((p) => p.stok > 0 && !(p.id in produk) && !(awal[p.id] && awal[p.id] > dari))
+    .map((p) => ({ id: p.id, nama: p.nama, stok: p.stok, satuan: p.satuan, nilai: p.stok * p.harga_beli })).sort((a, b) => b.nilai - a.nilai);
+  const stokMati = { jumlah: mati.length, nilai: mati.reduce((a, p) => a + p.nilai, 0), daftar: mati.slice(0, 10) };
+  // ----- persediaan
+  const nilaiModal = dataProd.reduce((a, p) => a + p.stok * p.harga_beli, 0), nilaiJual = dataProd.reduce((a, p) => a + p.stok * p.harga_jual, 0);
+  const batas = angka_(pg.stok_menipis);
+  const persediaan = { nilai_modal: nilaiModal, nilai_jual: nilaiJual, potensi_laba: nilaiJual - nilaiModal, produk: dataProd.length,
+    habis: dataProd.filter((p) => p.stok <= 0).length, menipis: dataProd.filter((p) => p.stok > 0 && p.stok <= stokMinEfektif_(p.stok_min, batas)).length,
+    perputaran: nilaiModal > 0 ? desimal_(hppTot / nilaiModal, 2) : null, perputaran_tahunan: nilaiModal > 0 ? desimal_(hppTot * 365 / hariN / nilaiModal, 1) : null,
+    hari_persediaan: hppTot > 0 ? desimal_(nilaiModal / (hppTot / hariN), 1) : null, gmroi_tahunan: nilaiModal > 0 ? desimal_(labaKotor * 365 / hariN / nilaiModal, 2) : null };
+  // ----- uang: pengeluaran operasional, susut, titik impas
+  let opex = 0; bacaBaru_('keuangan').baris.forEach((r) => {
+    const t = teks_(r.tanggal); if (t < dari || t > sampai || teks_(r.status) !== 'aktif' || teks_(r.jenis) !== 'pengeluaran') return;
+    if (KAT_KEU.pengeluaran[teks_(r.kategori)] && KAT_KEU.pengeluaran[teks_(r.kategori)][1]) opex += bulatNum_(r.jumlah);
+  });
+  const susut = hitungSusut_(mutasiDalamRentang_(dari, sampai));
+  const rasio = omzet > 0 ? labaKotor / omzet : null, tetapHari = opex / hariN, bep = rasio && rasio > 0 ? tetapHari / rasio : null, rataHari = omzet / hariN;
+  const impas = { biaya_tetap_harian: Math.round(tetapHari), margin_rasio: rasio === null ? null : desimal_(rasio, 4), omzet_impas_harian: bep === null ? null : Math.round(bep), omzet_rata_harian: Math.round(rataHari),
+    selisih: bep === null ? null : Math.round(rataHari - bep), status: bep === null ? null : (rataHari >= bep ? 'di_atas' : 'di_bawah'), transaksi_impas_harian: bep !== null && aov > 0 ? desimal_(bep / aov, 1) : null };
+  // ----- pembanding & proyeksi
+  const prevSampai = geserTgl_(dari, -1), prevDari = geserTgl_(dari, -hariN), prev = ringkasPeriode_(prevDari, prevSampai);
+  const banding = { dari: prevDari, sampai: prevSampai, omzet: prev.omzet, transaksi: prev.transaksi, laba_kotor: prev.laba_kotor,
+    omzet_pct: persenUbah_(omzet, prev.omzet), transaksi_pct: persenUbah_(nTrx, prev.transaksi), laba_kotor_pct: persenUbah_(labaKotor, prev.laba_kotor) };
+  let proyeksi = null;
+  if (sampai === hariIni_() && dari === sampai.slice(0, 8) + '01') {
+    const y = Number(sampai.slice(0, 4)), m = Number(sampai.slice(5, 7)), hb = new Date(Date.UTC(y, m, 0)).getUTCDate(), hl = Number(sampai.slice(8, 10));
+    proyeksi = { hari_berlalu: hl, hari_bulan: hb, omzet: Math.round(omzet / hl * hb), laba_kotor: Math.round(labaKotor / hl * hb) };
+  }
+  const kasirList = Object.keys(kasir).map((u) => { const k = kasir[u]; return { username: k.username, nama: k.nama, transaksi: k.transaksi, omzet: k.omzet, rata: k.transaksi ? Math.round(k.omzet / k.transaksi) : 0,
+    diskon: k.diskon, diskon_persen: k.kotor > 0 ? desimal_(k.diskon * 100 / k.kotor, 1) : 0, batal: k.batal }; }).sort((a, b) => b.omzet - a.omzet);
+  const ringkas = { omzet: omzet, transaksi: nTrx, aov: Math.round(aov), item_per_transaksi: nTrx ? desimal_(qtyTot / nTrx, 2) : 0, laba_kotor: labaKotor, margin: omzet > 0 ? desimal_(labaKotor * 100 / omzet, 1) : null,
+    diskon: diskonTot, diskon_persen: kotorTot > 0 ? desimal_(diskonTot * 100 / kotorTot, 1) : 0, rata_harian: Math.round(rataHari), hari_aktif: hariAktif, batal: batalN, hpp: hppTot };
+  const hasil = { dari: dari, sampai: sampai, hari: hariN, param: { lead_time: lead, hari_cakupan: cakupan, z: Z_LAYANAN }, ringkas: ringkas, banding: banding,
+    harian: tgls.map((t) => hari[t]), jam: jam, hari_minggu: dow.map((d) => ({ nama: d.nama, hari: d.hari, transaksi: d.transaksi, omzet: d.omzet, rata_omzet: d.hari ? Math.round(d.omzet / d.hari) : 0 })),
+    terlaris_qty: terlarisQty, terlaris_laba: terlarisLaba, abc: abc, produk_abc: urutOmzet.slice(0, 30).map((p) => ({ id: p.id, nama: p.nama, kelas: kelas[p.id].kelas, kumulatif: kelas[p.id].kumulatif })),
+    restok: restok, stok_mati: stokMati, persediaan: persediaan, impas: impas, proyeksi: proyeksi, kasir: kasirList,
+    susut: { kerugian: susut.kerugian, pemulihan: susut.pemulihan, bersih: susut.bersih, pribadi: susut.pribadi, retur: susut.retur, estimasi: susut.estimasi }, opex: opex };
+  hasil.saran = buatSaran_(hasil, daftar);
+  return hasil;
+}
+
+/* Temuan & saran: setiap saran menyertakan ANGKA bukti, supaya pemilik bisa memeriksanya. */
+function buatSaran_(a, daftar) {
+  const out = [], r = a.ringkas, nama = (l, n) => l.slice(0, n).map((p) => p.nama).join(', ');
+  const rp0 = (n) => (n < 0 ? '-' : '') + 'Rp' + String(Math.round(Math.abs(n))).replace(/\B(?=(\d{3})+(?!\d))/g, '.');   // format rupiah sendiri (tidak bergantung pada toLocaleString)
+  if (a.ringkas.hari_aktif < 7) out.push({ tingkat: 'info', kode: 'data_sedikit', judul: 'Data masih sedikit', teks: `Baru ${r.hari_aktif} hari ada penjualan pada periode ini. Rata-rata dan saran restok baru cukup andal setelah minimal 7 hari data.`, bukti: [] });
+  const mendesak = a.restok.filter((p) => p.hari_stok !== null && p.hari_stok < a.param.lead_time && p.data_cukup);
+  if (mendesak.length) out.push({ tingkat: 'penting', kode: 'restok_mendesak', judul: `Restok segera: ${mendesak.length} produk`, teks: `Stok ${nama(mendesak, 4)} diperkirakan habis sebelum barang pesanan tiba (lead time ${a.param.lead_time} hari).`,
+    bukti: mendesak.slice(0, 5).map((p) => `${p.nama}: stok ${p.stok} ÷ ${p.rata_harian}/hari = ${p.hari_stok} hari < ${a.param.lead_time} hari; titik pesan ulang ${p.rop}; saran beli ${p.saran_qty} ${p.satuan}`) });
+  const rugi = daftar.filter((p) => p.laba < 0);
+  if (rugi.length) out.push({ tingkat: 'penting', kode: 'jual_rugi', judul: `${rugi.length} produk terjual di bawah modal`, teks: `${nama(rugi, 4)} menghasilkan laba negatif. Periksa harga jual atau harga modalnya.`,
+    bukti: rugi.slice(0, 5).map((p) => `${p.nama}: omzet ${rp0(p.omzet)} − modal ${rp0(p.hpp)} = ${rp0(p.laba)} (margin ${p.margin}%)`) });
+  const tipis = r.margin !== null ? daftar.filter((p) => p.kelas === 'A' && p.margin !== null && p.laba >= 0 && p.margin < r.margin - 5) : [];
+  if (tipis.length) out.push({ tingkat: 'info', kode: 'andalan_tipis', judul: 'Produk andalan bermargin tipis', teks: `${nama(tipis, 3)} termasuk penyumbang omzet terbesar (kelas A) tetapi marginnya lebih dari 5 poin di bawah rata-rata toko (${r.margin}%).`,
+    bukti: tipis.slice(0, 3).map((p) => { const modalSatuan = p.hpp / p.qty, hargaTarget = modalSatuan / (1 - r.margin / 100); return `${p.nama}: margin ${p.margin}%. Untuk mencapai ${r.margin}% dibutuhkan harga rata-rata ≈ ${rp0(hargaTarget)} (modal ${rp0(modalSatuan)} ÷ ${(1 - r.margin / 100).toFixed(3)})`; }) });
+  if (a.impas.status === 'di_bawah') out.push({ tingkat: 'penting', kode: 'di_bawah_impas', judul: 'Penjualan harian di bawah titik impas', teks: `Rata-rata omzet ${rp0(a.impas.omzet_rata_harian)} per hari, padahal titik impas ${rp0(a.impas.omzet_impas_harian)} per hari (kurang ${rp0(-a.impas.selisih)}).`,
+    bukti: [`Biaya tetap ${rp0(a.impas.biaya_tetap_harian)}/hari ÷ rasio laba kotor ${(a.impas.margin_rasio * 100).toFixed(1)}% = ${rp0(a.impas.omzet_impas_harian)}/hari`, `Setara ±${a.impas.transaksi_impas_harian} transaksi/hari pada rata-rata ${rp0(r.aov)} per transaksi`] });
+  else if (a.impas.status === 'di_atas') out.push({ tingkat: 'baik', kode: 'di_atas_impas', judul: 'Penjualan di atas titik impas', teks: `Rata-rata omzet ${rp0(a.impas.omzet_rata_harian)} per hari, ${rp0(a.impas.selisih)} di atas titik impas ${rp0(a.impas.omzet_impas_harian)} per hari.`, bukti: [] });
+  if (a.stok_mati.jumlah) out.push({ tingkat: 'info', kode: 'stok_mati', judul: `Modal tertahan ${rp0(a.stok_mati.nilai)} di ${a.stok_mati.jumlah} produk`, teks: `${nama(a.stok_mati.daftar, 4)} tidak terjual sama sekali selama ${a.hari} hari. Pertimbangkan promo atau berhenti membeli.`,
+    bukti: a.stok_mati.daftar.slice(0, 4).map((p) => `${p.nama}: ${p.stok} ${p.satuan} × modal = ${rp0(p.nilai)}`) });
+  const hppRef = a.ringkas.hpp;
+  if (hppRef > 0 && a.susut.bersih > 0 && a.susut.bersih * 100 / hppRef > 2) out.push({ tingkat: 'penting', kode: 'susut_tinggi', judul: 'Susut stok tinggi', teks: `Kerugian stok bersih ${rp0(a.susut.bersih)} = ${desimal_(a.susut.bersih * 100 / hppRef, 1)}% dari harga pokok penjualan (patokan wajar di bawah 2%).`, bukti: [] });
+  const kasirTinggi = a.kasir.filter((k) => k.transaksi >= 3 && k.diskon_persen >= 2 * Math.max(r.diskon_persen, 0.5) && k.diskon_persen >= 3);
+  kasirTinggi.forEach((k) => out.push({ tingkat: 'info', kode: 'diskon_kasir', judul: `Diskon tinggi: ${k.nama}`, teks: `Diskon ${k.nama} rata-rata ${k.diskon_persen}% dari penjualan kotor, lebih dari dua kali rata-rata toko (${r.diskon_persen}%).`, bukti: [`${k.transaksi} transaksi, total diskon ${rp0(k.diskon)}`] }));
+  const jamRamai = a.jam.slice().sort((x, y) => y.transaksi - x.transaksi)[0];
+  if (jamRamai && jamRamai.transaksi > 0 && r.transaksi >= 10) out.push({ tingkat: 'info', kode: 'jam_ramai', judul: `Jam tersibuk ${String(jamRamai.jam).padStart(2, '0')}.00`, teks: `${jamRamai.transaksi} dari ${r.transaksi} transaksi (${desimal_(jamRamai.transaksi * 100 / r.transaksi, 1)}%) terjadi pada jam ini. Pastikan kasir dan stok barang laris siap.`, bukti: [] });
+  return out;
+}
+
+function aksiAnalitik_(s, p) {
+  const hari = hariIni_();
+  const rg = rentangAman_(p, geserTgl_(hari, -29)); if (rg.galat) return gal_(rg.galat);
+  if (selisihHari_(rg.dari, rg.sampai) + 1 > ANALITIK_MAKS_HARI) return gal_('rentang_analitik_terlalu_panjang');
+  const out = hitungAnalitik_(rg.dari, rg.sampai); out.ok = true; return out;
 }

@@ -6,8 +6,8 @@ const MODUL = [
   { no: 3, nama: 'Inventaris', info: 'Stok masuk/keluar, stok minimum, mutasi', status: 'aktif' },
   { no: 4, nama: 'Point of Sale', info: 'Keranjang, scanner, diskon, pembayaran, struk', status: 'aktif' },
   { no: 5, nama: 'Keuangan', info: 'Pengeluaran, pemasukan, laba, tutup kas', status: 'aktif' },
-  { no: 6, nama: 'Analitik', info: 'Omzet, terlaris, nilai persediaan', status: 'next' },
-  { no: 7, nama: 'Audit & Keamanan', info: 'Log lengkap, penguncian, backup', status: 'rencana' }
+  { no: 6, nama: 'Analitik', info: 'Tren, terlaris, ABC, restok, titik impas', status: 'aktif' },
+  { no: 7, nama: 'Audit & Keamanan', info: 'Log lengkap, penguncian, backup', status: 'next' }
 ];
 const STATUS_MODUL = {
   aktif: ['Aktif', 'bg-langit/15 text-biru'],
@@ -26,6 +26,8 @@ VIEW.dashboard = {
   async html() {
     const d = await api('dashboard');
     const p = S.pengguna;
+    let an = null;   // ringkasan 7 hari untuk Owner/Admin (gagal memuat tidak boleh merusak Beranda)
+    if (S.izin.includes('laporan')) { try { an = await api('analitik', { dari: geserHari(hariIniKu(), -6), sampai: hariIniKu() }); } catch (e) { an = null; } }
     const hari = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     const menipis = d.menipis.length
       ? `<ul class="divide-y divide-stone-100">${d.menipis.map((i) => `
@@ -60,6 +62,13 @@ VIEW.dashboard = {
         ${d.nilai_persediaan !== null ? kotakStat('Nilai persediaan', rp(d.nilai_persediaan), 'wallet', 'bg-white', true) : kotakStat('Kategori', d.jumlah_kategori, 'layout-grid')}
       </div>
 
+      ${an ? `<section class="rounded-2xl bg-white p-4 shadow-[0_1px_3px_rgba(16,24,40,.08)] ring-1 ring-stone-900/5">
+        <h3 class="flex items-center gap-2 font-display text-base font-extrabold">${ic('chart-column', 'w-5 h-5 text-biru')}7 hari terakhir<button type="button" data-aksi="pindah" data-ke="analitik" class="ml-auto text-sm font-bold text-biru">Analitik lengkap</button></h3>
+        ${svgBatang(an.harian.map((x) => x.omzet), an.harian.map((x) => tglPanjang(x.tanggal)), { judul: 'Penjualan 7 hari', fmt: rp, sumbu: (i) => an.harian[i].tanggal.slice(8), tinggi: 110, langkah: 1 })}
+        <p class="mt-1 flex flex-wrap items-center gap-x-2 text-sm"><b>${rp(an.ringkas.omzet)}</b> dari ${an.ringkas.transaksi} transaksi ${lencanaUbah(an.banding.omzet_pct)}</p>
+        ${an.terlaris_qty.length ? `<p class="mt-2 text-xs font-bold text-stone-500">Terlaris</p><ol class="mt-0.5 text-sm">${an.terlaris_qty.slice(0, 3).map((x, i) => `<li class="flex justify-between gap-2 py-0.5"><span class="min-w-0 truncate">${i + 1}. ${esc(x.nama)}</span><span class="shrink-0 font-bold">${x.qty} ${esc(x.satuan)}</span></li>`).join('')}</ol>` : ''}
+        ${an.saran.filter((x) => x.tingkat === 'penting').length ? `<div class="mt-3 space-y-1.5">${an.saran.filter((x) => x.tingkat === 'penting').slice(0, 3).map((x) => `<p class="flex items-start gap-2 rounded-xl bg-tomat/10 px-3 py-2 text-sm font-semibold text-tomat">${ic('siren', 'mt-0.5 h-4 w-4 shrink-0')}<span>${esc(x.judul)}</span></p>`).join('')}</div>` : ''}
+      </section>` : ''}
       <section class="rounded-2xl bg-white p-4 shadow-[0_1px_3px_rgba(16,24,40,.08)] ring-1 ring-stone-900/5">
         <h3 class="flex items-center gap-2 font-display text-base font-extrabold">${ic('triangle-alert', 'w-5 h-5 text-jingga')}Perlu restok${S.izin.includes('barang_masuk') ? `<button type="button" data-aksi="pindah" data-ke="stok" class="ml-auto text-sm font-bold text-biru">Buka Stok</button>` : ''}</h3>
         ${menipis}

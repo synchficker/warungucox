@@ -21,6 +21,9 @@ VIEW.pengaturan = {
           <select name="pembulatan" class="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-base font-semibold text-stone-800">
             ${[['0', 'Tanpa pembulatan'], ['100', 'Ke atas, kelipatan Rp100'], ['500', 'Ke atas, kelipatan Rp500'], ['1000', 'Ke atas, kelipatan Rp1.000']].map((o) => `<option value="${o[0]}" ${String(p.pembulatan) === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>
           <span class="mt-1 block text-xs font-normal text-stone-500">Hanya untuk tunai. QRIS dan transfer selalu pas.</span></label>
+        <div class="border-t border-stone-100 pt-3"><h3 class="flex items-center gap-2 font-display text-base font-extrabold">${ic('package-search', 'w-5 h-5 text-biru')}Saran restok (Analitik)</h3></div>
+        ${kolom('lead_time_hari', 'Lama barang datang setelah dipesan (hari)', { nilai: p.lead_time_hari, mode: 'numeric', maks: 2, bantu: 'Dipakai untuk menghitung titik pesan ulang. Isi dengan kenyataan di toko Anda.' })}
+        ${kolom('hari_cakupan', 'Pesan untuk berapa hari penjualan', { nilai: p.hari_cakupan, mode: 'numeric', maks: 2, bantu: 'Jumlah beli = cukup untuk sekian hari di atas titik pesan ulang. Makin besar makin jarang belanja, tetapi modal tertahan lebih banyak.' })}
         <label class="block text-sm font-semibold text-stone-600">Jika stok tercatat kurang
           <select name="jual_stok_kurang" class="mt-1 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-base font-semibold text-stone-800">
             <option value="tidak" ${p.jual_stok_kurang !== 'ya' ? 'selected' : ''}>Tolak penjualan (disarankan)</option>

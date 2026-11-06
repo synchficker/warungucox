@@ -116,6 +116,10 @@ const PESAN = {
   modal_awal_tidak_valid: 'Modal awal harus angka bulat (rupiah).',
   kas_hitung_tidak_valid: 'Uang tunai di laci harus angka bulat (rupiah).',
   catatan_selisih_wajib: 'Kas tidak sama dengan yang seharusnya. Isi catatan penyebab selisih.',
+  pesanan_wa_tidak_ada: 'Pesanan WhatsApp itu tidak ditemukan atau sudah diproses (dicatat atau dibatalkan).',
+  lead_time_tidak_valid: 'Lead time harus angka bulat 1 sampai 60 hari.',
+  cakupan_tidak_valid: 'Hari cakupan harus angka bulat 1 sampai 60 hari.',
+  rentang_analitik_terlalu_panjang: 'Rentang analitik maksimal 92 hari.',
   jaringan: 'Tidak bisa terhubung ke Google Sheets. Periksa internet lalu coba lagi.'
 };
 const pesanGalat = (e) => {

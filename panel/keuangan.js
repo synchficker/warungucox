@@ -71,7 +71,7 @@ function isiLaporan() {
       ${kartu('Penjualan', rp(g.omzet), g.transaksi + ' transaksi')}
       ${kartu('Laba kotor', rp(g.laba_kotor), g.margin === null ? 'margin -' : 'margin ' + String(g.margin).replace('.', ',') + '%', warnaLaba(g.laba_kotor))}
       ${kartu('Pengeluaran', rp(g.pengeluaran_operasional), 'operasional')}
-      ${kartu('Laba bersih', rp(g.laba_bersih), 'setelah pengeluaran', warnaLaba(g.laba_bersih) + ' !text-2xl')}
+      ${kartu('Laba bersih', rp(g.laba_bersih), 'setelah pengeluaran & susut', warnaLaba(g.laba_bersih) + ' !text-2xl')}
     </div>
     ${r.tidak_tuntas ? `<p class="flex items-start gap-2 rounded-xl bg-jingga/30 px-3 py-2 text-sm font-semibold text-amber-900">${ic('triangle-alert', 'mt-0.5 h-4 w-4 shrink-0')}<span>${r.tidak_tuntas} transaksi berstatus tidak tuntas dan belum dihitung. Periksa di Kasir &rsaquo; Riwayat.</span></p>` : ''}
     <section class="rounded-2xl bg-white px-4 py-2 shadow-[0_1px_3px_rgba(16,24,40,.08)] ring-1 ring-stone-900/5 divide-y divide-stone-100"><h3 class="py-2 font-display text-base font-extrabold">Laba rugi</h3>
@@ -79,6 +79,7 @@ function isiLaporan() {
       ${barisLap('Laba kotor', rp(g.laba_kotor), { garis: true, warna: warnaLaba(g.laba_kotor) })}
       ${r.pemasukan_kategori.map((k) => barisLap(esc(k.label), '+' + rp(k.jumlah), { indent: true })).join('')}
       ${r.pengeluaran_kategori.filter((k) => k.operasional).map((k) => barisLap(esc(k.label), '-' + rp(k.jumlah), { indent: true })).join('')}
+      ${g.susut_stok !== 0 ? barisLap('Susut stok (bersih)', (g.susut_stok > 0 ? '-' : '+') + rp(Math.abs(g.susut_stok)), { indent: true }) : ''}
       ${barisLap('Laba bersih', rp(g.laba_bersih), { garis: true, warna: warnaLaba(g.laba_bersih) })}
     </section>
     <section class="rounded-2xl bg-white px-4 py-2 shadow-[0_1px_3px_rgba(16,24,40,.08)] ring-1 ring-stone-900/5 divide-y divide-stone-100"><h3 class="py-2 font-display text-base font-extrabold">Pembayaran diterima</h3>
@@ -88,17 +89,20 @@ function isiLaporan() {
       ${barisLap(`Transaksi dibatalkan (${r.batal.jumlah})`, rp(r.batal.total))}
       ${barisLap(`Pembelian stok (${r.pembelian_stok.penerimaan} penerimaan, ${r.pembelian_stok.unit} unit)`, rp(r.pembelian_stok.nilai))}
       ${barisLap('Pembayaran ke supplier', rp(g.bayar_supplier))}
-      ${barisLap(`Pesanan WhatsApp toko (${r.wa.pesanan} pesanan, ${r.wa.unit} unit)`, 'tidak dihitung', { kecil: true })}
-      <p class="py-2 text-[11px] leading-snug text-stone-400">Laba bersih = penjualan − harga pokok + pemasukan lain − pengeluaran operasional. Pembelian stok dan pembayaran supplier tidak dikurangkan lagi karena modalnya sudah termasuk harga pokok. Pesanan WhatsApp mengurangi stok tetapi belum dihitung sebagai penjualan.</p>
+      ${r.susut.kerugian || r.susut.pemulihan ? barisLap(`Susut stok: kerugian ${rp(r.susut.kerugian)}, pemulihan ${rp(r.susut.pemulihan)}`, '', { kecil: true }) : ''}
+      ${r.susut.pribadi ? barisLap('Dipakai sendiri (tidak mengurangi laba)', rp(r.susut.pribadi), { kecil: true }) : ''}${r.susut.retur ? barisLap('Retur ke supplier (tidak mengurangi laba)', rp(r.susut.retur), { kecil: true }) : ''}
+      ${barisLap(`Pesanan WhatsApp: ${r.wa.pesanan} masuk, ${r.wa_dicatat.transaksi} dicatat sebagai penjualan (${rp(r.wa_dicatat.omzet)})`, r.wa_menunggu ? r.wa_menunggu + ' menunggu' : '', { kecil: true, warna: 'font-bold text-amber-700' })}
+      ${r.susut.estimasi ? `<p class="py-1 text-[11px] text-amber-700">${r.susut.estimasi} penyesuaian lama tidak punya catatan modal, dinilai dengan modal produk sekarang (estimasi).</p>` : ''}
+      <p class="py-2 text-[11px] leading-snug text-stone-400">Laba bersih = penjualan − harga pokok + pemasukan lain − pengeluaran operasional − susut stok bersih. Pembelian stok dan pembayaran supplier tidak dikurangkan lagi karena modalnya sudah termasuk harga pokok. Pesanan WhatsApp baru masuk penjualan setelah dicatat oleh Admin/Owner di Kasir.</p>
     </section>
     ${harian}
   </div>`;
 }
 AKSI['ku-csv'] = () => {
   const r = KU.lap; if (!r) return;
-  const baris = [['Tanggal', 'Transaksi', 'Penjualan', 'HPP', 'Laba kotor', 'Diskon', 'Pemasukan lain', 'Pengeluaran operasional', 'Bayar supplier', 'Laba bersih'],
-    ...r.harian.map((d) => [d.tanggal, d.transaksi, d.omzet, d.hpp, d.laba_kotor, d.diskon, d.pemasukan_lain, d.pengeluaran_operasional, d.bayar_supplier, d.laba_bersih]),
-    ['TOTAL', r.ringkas.transaksi, r.ringkas.omzet, r.ringkas.hpp, r.ringkas.laba_kotor, r.ringkas.diskon, r.ringkas.pemasukan_lain, r.ringkas.pengeluaran_operasional, r.ringkas.bayar_supplier, r.ringkas.laba_bersih]];
+  const baris = [['Tanggal', 'Transaksi', 'Penjualan', 'HPP', 'Laba kotor', 'Diskon', 'Pemasukan lain', 'Pengeluaran operasional', 'Bayar supplier', 'Susut stok', 'Laba bersih'],
+    ...r.harian.map((d) => [d.tanggal, d.transaksi, d.omzet, d.hpp, d.laba_kotor, d.diskon, d.pemasukan_lain, d.pengeluaran_operasional, d.bayar_supplier, d.susut, d.laba_bersih]),
+    ['TOTAL', r.ringkas.transaksi, r.ringkas.omzet, r.ringkas.hpp, r.ringkas.laba_kotor, r.ringkas.diskon, r.ringkas.pemasukan_lain, r.ringkas.pengeluaran_operasional, r.ringkas.bayar_supplier, r.ringkas.susut_stok, r.ringkas.laba_bersih]];
   const csv = '\uFEFF' + baris.map((b) => b.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(';')).join('\r\n');   // titik koma + BOM: terbaca benar di Excel Indonesia
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `laporan-keuangan-${r.dari}_${r.sampai}.csv`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); toast('Laporan diunduh.');
